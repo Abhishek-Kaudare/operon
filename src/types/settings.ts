@@ -401,7 +401,7 @@ export function resolveEnabledCalendarMobileViewModes(settings: Pick<OperonSetti
 	const enabledModes = CALENDAR_MOBILE_VIEW_MODES.filter(mode => settings[CALENDAR_MOBILE_VIEW_MODE_ENABLED_SETTING_BY_VIEW_MODE[mode]] !== false);
 	return enabledModes.length > 0 ? enabledModes : ['agenda'];
 }
-export type CalendarDayTitleAction = 'create-open-daily-note' | 'nothing';
+export type CalendarDayTitleAction = 'create-open-daily-note' | 'create-open-journal-note' | 'nothing';
 const CONTEXTUAL_MENU_ACTION_ID_SET = new Set<ContextualMenuActionId>(
 	CONFIGURABLE_CONTEXTUAL_MENU_ACTIONS.map(action => action.id),
 );
@@ -417,7 +417,7 @@ export const KANBAN_MOBILE_COMPACT_SWIMLANE_WIDTH_MAX = 48;
 export const DUPLICATE_ALERT_DELAY_SECONDS_OPTIONS = [10, 30, 60, 120] as const;
 export type TrackerTaskDescriptionClickAction = 'jumpToSource' | 'openTaskEditor';
 export type FlowTimeMode = 'tracktime' | 'flowtime';
-export type InlineTaskSaveMode = 'daily-notes' | 'specific-file' | 'active-file' | 'ask-every-time';
+export type InlineTaskSaveMode = 'daily-notes' | 'journals' | 'specific-file' | 'active-file' | 'ask-every-time';
 export type InlineTaskParentInlineTargetMode = 'default' | 'below-parent';
 export type InlineTaskParentFileTargetMode = 'default' | 'inside-parent-file';
 export type FileTaskParentInlineTargetMode = 'default' | 'same-folder';
@@ -1503,6 +1503,14 @@ export interface OperonSettings {
 	inlineTaskDailyNoteAddStartDate: boolean;
 	/** If true, new inline Operon tasks in Daily Notes auto-get dateScheduled from the note date when blank. */
 	inlineTaskDailyNoteAddScheduledDate: boolean;
+	/** Name of the Journals plugin journal to use as inline task target when inlineTaskSaveMode is 'journals'. */
+	inlineTaskJournalName: string;
+	/** If true, new inline Operon tasks in journal notes auto-get dateStarted from the note date when blank. */
+	inlineTaskJournalAddStartDate: boolean;
+	/** If true, new inline Operon tasks in journal notes auto-get dateScheduled from the note date when blank. */
+	inlineTaskJournalAddScheduledDate: boolean;
+	/** Heading keyword used as insertion target for inline tasks inside journal notes. Empty means append. */
+	inlineTaskJournalHeading: string;
 	/** If true, inline tasks created inside a file task file auto-get parentTask set to that file task. */
 	autoParentFileTask: boolean;
 	/** If true, linked file tasks created inside a file task file auto-get parentTask set to that file task. */
@@ -1753,6 +1761,8 @@ export interface OperonSettings {
 	excludedFolders: string[];
 	/** If true, daily notes created by Operon are initialized as minimal Operon file tasks. */
 	createDailyNotesAsOperonTask: boolean;
+	/** If true, journal notes created by Operon are initialized as minimal Operon file tasks. */
+	createJournalNotesAsOperonTask: boolean;
 	/** Most recently used template for Create File Task picker ordering. */
 	lastUsedFileTaskTemplateId: string | null;
 
@@ -2009,6 +2019,10 @@ export const DEFAULT_SETTINGS: OperonSettings = {
 	inlineTaskParentFileHeadingKeyword: DEFAULT_INLINE_TASK_PARENT_FILE_HEADING_KEYWORD,
 	inlineTaskDailyNoteAddStartDate: false,
 	inlineTaskDailyNoteAddScheduledDate: false,
+	inlineTaskJournalName: 'Daily',
+	inlineTaskJournalAddStartDate: false,
+	inlineTaskJournalAddScheduledDate: false,
+	inlineTaskJournalHeading: '',
 	autoParentFileTask: true,
 	autoParentLinkedFileSubtasks: true,
 	childTaskInheritanceFields: [...DEFAULT_CHILD_TASK_INHERITANCE_FIELDS],
@@ -2199,6 +2213,7 @@ export const DEFAULT_SETTINGS: OperonSettings = {
 	fileTaskTemplateFolder: '',
 	excludedFolders: [],
 	createDailyNotesAsOperonTask: false,
+	createJournalNotesAsOperonTask: false,
 	lastUsedFileTaskTemplateId: null,
 
 		defaultEstimateMinutes: 30,
@@ -2799,7 +2814,7 @@ function normalizeCalendarInitialScrollMode(raw: unknown): 'fixedHour' | 'autoNo
 }
 
 function normalizeCalendarDayTitleAction(raw: unknown): CalendarDayTitleAction {
-	return raw === 'nothing' || raw === 'create-open-daily-note'
+	return raw === 'nothing' || raw === 'create-open-daily-note' || raw === 'create-open-journal-note'
 		? raw
 		: DEFAULT_SETTINGS.calendarDayTitleAction;
 }
@@ -3477,6 +3492,7 @@ function normalizeTaskStatsBackfillVersion(raw: unknown): number {
 
 function normalizeInlineTaskSaveMode(raw: unknown, fallback: InlineTaskSaveMode): InlineTaskSaveMode {
 	return raw === 'daily-notes'
+		|| raw === 'journals'
 		|| raw === 'specific-file'
 		|| raw === 'active-file'
 		|| raw === 'ask-every-time'
@@ -3837,6 +3853,18 @@ export function migrateSettings(raw: unknown): OperonSettings {
 	out.inlineTaskDailyNoteAddScheduledDate = typeof src.inlineTaskDailyNoteAddScheduledDate === 'boolean'
 		? src.inlineTaskDailyNoteAddScheduledDate
 		: DEFAULT_SETTINGS.inlineTaskDailyNoteAddScheduledDate;
+	out.inlineTaskJournalName = typeof src.inlineTaskJournalName === 'string' && src.inlineTaskJournalName.trim()
+		? src.inlineTaskJournalName.trim()
+		: DEFAULT_SETTINGS.inlineTaskJournalName;
+	out.inlineTaskJournalAddStartDate = typeof src.inlineTaskJournalAddStartDate === 'boolean'
+		? src.inlineTaskJournalAddStartDate
+		: DEFAULT_SETTINGS.inlineTaskJournalAddStartDate;
+	out.inlineTaskJournalAddScheduledDate = typeof src.inlineTaskJournalAddScheduledDate === 'boolean'
+		? src.inlineTaskJournalAddScheduledDate
+		: DEFAULT_SETTINGS.inlineTaskJournalAddScheduledDate;
+	out.inlineTaskJournalHeading = typeof src.inlineTaskJournalHeading === 'string'
+		? src.inlineTaskJournalHeading.trim()
+		: DEFAULT_SETTINGS.inlineTaskJournalHeading;
 	out.taskCreatorToolbar = normalizeTaskCreatorToolbar(src.taskCreatorToolbar);
 	out.taskEditorShowLineNumbers = typeof src.taskEditorShowLineNumbers === 'boolean'
 		? src.taskEditorShowLineNumbers
@@ -4370,6 +4398,7 @@ export function migrateSettings(raw: unknown): OperonSettings {
 		out.locationPreviewMaxZoom,
 	);
 	out.createDailyNotesAsOperonTask = src.createDailyNotesAsOperonTask === true;
+	out.createJournalNotesAsOperonTask = src.createJournalNotesAsOperonTask === true;
 	out.trackerTaskDescriptionClickAction = src.trackerTaskDescriptionClickAction === 'openTaskEditor'
 		? 'openTaskEditor'
 		: DEFAULT_SETTINGS.trackerTaskDescriptionClickAction;

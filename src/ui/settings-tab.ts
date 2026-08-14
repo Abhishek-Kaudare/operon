@@ -77,9 +77,10 @@ import { buildCoreGeneralSettingsPlan } from './settings/core-general-settings-p
 import { getReleaseNotesForManualView } from '../core/release-notes';
 import { asHTMLElement } from '../core/dom-compat';
 import { getAppLocale, isDailyNotesCoreAvailable } from '../core/obsidian-app';
-import { resolveEffectiveInlineTaskSaveMode } from '../core/inline-task-save-mode';
+import { resolveEffectiveInlineTaskSaveMode, type InlineTaskSaveMode } from '../core/inline-task-save-mode';
 import { DEFAULT_DAILY_NOTE_FORMAT } from '../core/daily-note-path';
 import { loadDailyNotesCoreConfig } from '../core/daily-notes-core-config';
+import { loadJournalsCoreConfig, getDayJournalNames, isJournalsPluginAvailable } from '../core/journals-core-config';
 import {
 	cloneDefaultColorPalette,
 	localizeColorPaletteNames,
@@ -887,6 +888,9 @@ export class OperonSettingsTab extends PluginSettingTab {
 	private expandedCalendarPresetIds: Set<string> = new Set();
 	private expandedSectionIds: Set<string> = new Set();
 	private indexer: OperonIndexer | null = null;
+	private journalsConfigLoaded = false;
+	private dayJournalNames: string[] = [];
+	private journalsAvailable = false;
 	private openFilterInSidebar: (filterSetId: string) => Promise<void>;
 	private pinnedCache: PinnedCache | null = null;
 	private filterPreviewOpenEditor: (operonId: string) => void;
@@ -2980,6 +2984,7 @@ export class OperonSettingsTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.journalsConfigLoaded = false;
 		this.isDeclarativeSettingsRendererActive = false;
 		this.renderImperativeSettingsFallback();
 	}
@@ -2997,6 +3002,7 @@ export class OperonSettingsTab extends PluginSettingTab {
 			primaryTabs: this.getPrimarySettingsTabs(),
 			secondaryTabs: this.getSecondarySettingsTabs(),
 			onActiveTabChange: tabId => {
+				this.journalsConfigLoaded = false;
 				this.activeTab = tabId;
 			},
 			renderTab: (tabId, contentEl) => {
@@ -3174,6 +3180,7 @@ export class OperonSettingsTab extends PluginSettingTab {
 	}
 
 	hide(): void {
+		this.journalsConfigLoaded = false;
 		this.disposeReminderSoundPreview();
 		this.clearActiveNativeSettingsPage();
 		if (this.hasPendingSettingsChange) {
@@ -5135,19 +5142,33 @@ export class OperonSettingsTab extends PluginSettingTab {
 	}
 
 	private renderTasksInlineTasksTab(containerEl: HTMLElement): void {
+		if (!this.journalsConfigLoaded) {
+			this.journalsConfigLoaded = true;
+			loadJournalsCoreConfig(this.app).then(config => {
+				this.journalsAvailable = isJournalsPluginAvailable(config);
+				this.dayJournalNames = getDayJournalNames(config);
+				this.redisplayPreservingScroll();
+			});
+		}
+
 		const defaultLocationSection = renderNativeSettingsGroupedSection(containerEl, t('settings', 'inlineTasksSection'));
 		const dailyNotesAvailable = isDailyNotesCoreAvailable(this.app);
-		const effectiveInlineTaskSaveMode = resolveEffectiveInlineTaskSaveMode(this.settings, dailyNotesAvailable);
+		const effectiveInlineTaskSaveMode = resolveEffectiveInlineTaskSaveMode(this.settings, dailyNotesAvailable, this.journalsAvailable);
+
+		const dropdownOptions = [
+			{ value: 'daily-notes', label: t('settings', 'inlineTaskSavePathDailyNotes') },
+			{ value: 'specific-file', label: t('settings', 'inlineTaskSavePathSpecificFile') },
+			{ value: 'active-file', label: t('settings', 'inlineTaskSavePathActiveFile') },
+			{ value: 'ask-every-time', label: t('settings', 'inlineTaskSavePathAskEveryTime') },
+		];
+		if (this.journalsAvailable) {
+			dropdownOptions.unshift({ value: 'journals', label: 'Journals' });
+		}
 
 		this.renderBoundDropdownSetting(defaultLocationSection, t('settings', 'inlineTaskDefaultSavePath'), t('settings', 'inlineTaskDefaultSavePathDesc'), 'inlineTaskSaveMode', {
 			value: effectiveInlineTaskSaveMode,
-			dropdownOptions: [
-				{ value: 'daily-notes', label: t('settings', 'inlineTaskSavePathDailyNotes') },
-				{ value: 'specific-file', label: t('settings', 'inlineTaskSavePathSpecificFile') },
-				{ value: 'active-file', label: t('settings', 'inlineTaskSavePathActiveFile') },
-				{ value: 'ask-every-time', label: t('settings', 'inlineTaskSavePathAskEveryTime') },
-			],
-			normalize: value => value,
+			dropdownOptions,
+			normalize: (value): InlineTaskSaveMode => value as InlineTaskSaveMode,
 			onBeforeSave: value => {
 				this.settings.inlineTaskUseDailyNote = value === 'daily-notes';
 			},
@@ -5155,6 +5176,45 @@ export class OperonSettingsTab extends PluginSettingTab {
 				this.redisplayPreservingScroll();
 			},
 		});
+
+		if (effectiveInlineTaskSaveMode === 'journals' && this.journalsAvailable) {
+			const journalOptions = this.dayJournalNames.map(name => ({ value: name, label: name }));
+			const selectedJournal = this.dayJournalNames.includes(this.settings.inlineTaskJournalName)
+				? this.settings.inlineTaskJournalName
+				: (this.dayJournalNames[0] ?? '');
+			this.renderBoundDropdownSetting(defaultLocationSection, 'Target Day Journal', 'Select which day journal to target for inline tasks.', 'inlineTaskJournalName', {
+				value: selectedJournal,
+				dropdownOptions: journalOptions.length > 0 ? journalOptions : [{ value: '', label: 'No Day Journals configured' }],
+				normalize: value => value,
+				onBeforeSave: value => {
+					this.settings.inlineTaskJournalName = value;
+				},
+				onAfterChange: () => {
+					this.redisplayPreservingScroll();
+				},
+			});
+
+			renderTextSetting({
+				containerEl: defaultLocationSection,
+				name: 'Journal Heading',
+				desc: 'Heading in the journal note under which the task should be inserted (leave empty to append to the end).',
+				value: this.settings.inlineTaskJournalHeading,
+				placeholder: 'Tasks',
+				settingClass: 'operon-settings-long-text-setting',
+				controlClass: 'operon-settings-input-long',
+				configure: text => {
+					text.inputEl.addEventListener('blur', settingsAsyncHandler('settings inline task journal heading keyword blur failed', async () => {
+						const normalized = text.inputEl.value.trim();
+						this.settings.inlineTaskJournalHeading = normalized;
+						await this.saveSettings();
+					}));
+				},
+				onChange: async (value) => {
+					this.settings.inlineTaskJournalHeading = value.trim();
+					await this.saveSettings();
+				},
+			});
+		}
 
 		const targetFileSetting = this.renderBoundTextSetting(defaultLocationSection, t('settings', 'inlineTaskTargetFile'), this.getInlineTaskTargetFileDescription(DEFAULT_DAILY_NOTE_FORMAT), 'inlineTaskTargetFile', {
 			placeholder: DEFAULT_INLINE_TASK_TARGET_FILE,
@@ -5259,6 +5319,17 @@ export class OperonSettingsTab extends PluginSettingTab {
 		);
 		this.renderBoundToggleSetting(dailyNoteDefaultsSection, t('settings', 'inlineTaskDailyNoteAddStartDate'), t('settings', 'inlineTaskDailyNoteAddStartDateDesc'), 'inlineTaskDailyNoteAddStartDate');
 		this.renderBoundToggleSetting(dailyNoteDefaultsSection, t('settings', 'inlineTaskDailyNoteAddScheduledDate'), t('settings', 'inlineTaskDailyNoteAddScheduledDateDesc'), 'inlineTaskDailyNoteAddScheduledDate');
+
+		if (this.journalsAvailable) {
+			const journalDefaultsTitle = 'Journals Inline Task Defaults';
+			const journalDefaultsSection = renderNativeSettingsGroupedSection(
+				containerEl,
+				journalDefaultsTitle,
+				undefined,
+			);
+			this.renderBoundToggleSetting(journalDefaultsSection, 'Auto-fill start date from journal note date', 'Auto-fill start date from the date of the journal note when created blank.', 'inlineTaskJournalAddStartDate');
+			this.renderBoundToggleSetting(journalDefaultsSection, 'Auto-fill scheduled date from journal note date', 'Auto-fill scheduled date from the date of the journal note when created blank.', 'inlineTaskJournalAddScheduledDate');
+		}
 
 		const conversionTitle = t('settings', 'checkboxConversion');
 		const conversionSection = renderNativeSettingsGroupedSection(
@@ -7142,13 +7213,21 @@ export class OperonSettingsTab extends PluginSettingTab {
 		this.renderBoundToggleSetting(generalSection, t('calendar', 'showWeekLabelOnFirstDay'), t('calendar', 'showWeekLabelOnFirstDayDesc'), 'calendarShowWeekLabelOnFirstDay');
 		this.renderBoundToggleSetting(generalSection, t('calendar', 'showHoverAddButton'), t('calendar', 'showHoverAddButtonDesc'), 'calendarShowHoverAddButton');
 
+		const dayTitleActionOptions: DropdownSettingOption<string>[] = [
+			{ value: 'create-open-daily-note', label: t('calendar', 'dayTitleActionCreateOpenDailyNote') },
+			{ value: 'nothing', label: t('calendar', 'dayTitleActionNothing') },
+		];
+		if (this.journalsAvailable) {
+			dayTitleActionOptions.push({ value: 'create-open-journal-note', label: 'Create/open journal note' });
+		}
+
 		this.renderBoundDropdownSetting(generalSection, t('calendar', 'dayTitleAction'), t('calendar', 'dayTitleActionDesc'), 'calendarDayTitleAction', {
 			value: this.settings.calendarDayTitleAction,
-			dropdownOptions: [
-				{ value: 'create-open-daily-note', label: t('calendar', 'dayTitleActionCreateOpenDailyNote') },
-				{ value: 'nothing', label: t('calendar', 'dayTitleActionNothing') },
-			],
-			normalize: (value): CalendarDayTitleAction => value === 'nothing' ? 'nothing' : 'create-open-daily-note',
+			dropdownOptions: dayTitleActionOptions,
+			normalize: (value): CalendarDayTitleAction => {
+				if (value === 'create-open-journal-note' && this.journalsAvailable) return 'create-open-journal-note';
+				return value === 'nothing' ? 'nothing' : 'create-open-daily-note';
+			},
 		});
 
 		this.renderBoundDropdownSetting(generalSection, t('calendar', 'initialScrollMode'), t('calendar', 'initialScrollModeDesc'), 'calendarInitialScrollMode', {
@@ -12519,6 +12598,16 @@ export class OperonSettingsTab extends PluginSettingTab {
 			this.buildNativeSettingsDocsAction(title, 'DOCS-050 Daily Notes workflows'),
 		);
 		this.renderBoundToggleSetting(sectionEl, t('settings', 'createDailyNotesAsOperonTask'), t('settings', 'createDailyNotesAsOperonTaskDesc'), 'createDailyNotesAsOperonTask');
+
+		if (this.journalsAvailable) {
+			const journalSectionTitle = 'Journals Support';
+			const journalSectionEl = renderNativeSettingsGroupedSection(
+				wrapper,
+				journalSectionTitle,
+				undefined,
+			);
+			this.renderBoundToggleSetting(journalSectionEl, 'Initialize new journal notes as Operon file tasks', 'When creating a new journal note via Operon, initialize it with a minimal Operon ID.', 'createJournalNotesAsOperonTask');
+		}
 	}
 
 	private renderFileTaskArchiveSettings(containerEl: HTMLElement): void {

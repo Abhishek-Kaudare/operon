@@ -315,6 +315,11 @@ function pickTaskCreationProfileStoreSettings(settings: OperonSettings): TaskCre
 		taskCreatorDefaultFileTemplateId: settings.taskCreatorDefaultFileTemplateId,
 		fileTaskTemplateFolder: settings.fileTaskTemplateFolder,
 		createDailyNotesAsOperonTask: settings.createDailyNotesAsOperonTask,
+		createJournalNotesAsOperonTask: settings.createJournalNotesAsOperonTask,
+		inlineTaskJournalName: settings.inlineTaskJournalName,
+		inlineTaskJournalAddStartDate: settings.inlineTaskJournalAddStartDate,
+		inlineTaskJournalAddScheduledDate: settings.inlineTaskJournalAddScheduledDate,
+		inlineTaskJournalHeading: settings.inlineTaskJournalHeading,
 		defaultEstimateMinutes: settings.defaultEstimateMinutes,
 	};
 }

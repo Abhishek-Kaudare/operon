@@ -33,6 +33,11 @@ const CREATION_KEYS = [
 	'taskCreatorDefaultFileTemplateId',
 	'fileTaskTemplateFolder',
 	'createDailyNotesAsOperonTask',
+	'createJournalNotesAsOperonTask',
+	'inlineTaskJournalName',
+	'inlineTaskJournalAddStartDate',
+	'inlineTaskJournalAddScheduledDate',
+	'inlineTaskJournalHeading',
 	'defaultEstimateMinutes',
 ] as const satisfies readonly (keyof OperonSettings)[];
 

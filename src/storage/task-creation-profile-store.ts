@@ -37,6 +37,11 @@ export type TaskCreationProfileStoreSettings = Pick<
 	| 'taskCreatorDefaultFileTemplateId'
 	| 'fileTaskTemplateFolder'
 	| 'createDailyNotesAsOperonTask'
+	| 'createJournalNotesAsOperonTask'
+	| 'inlineTaskJournalName'
+	| 'inlineTaskJournalAddStartDate'
+	| 'inlineTaskJournalAddScheduledDate'
+	| 'inlineTaskJournalHeading'
 	| 'defaultEstimateMinutes'
 >;
 
@@ -186,6 +191,11 @@ function readStoreData(
 		),
 		fileTaskTemplateFolder: readString(raw.fileTaskTemplateFolder, fallback.fileTaskTemplateFolder),
 		createDailyNotesAsOperonTask: readBoolean(raw.createDailyNotesAsOperonTask, fallback.createDailyNotesAsOperonTask),
+		createJournalNotesAsOperonTask: readBoolean(raw.createJournalNotesAsOperonTask, fallback.createJournalNotesAsOperonTask),
+		inlineTaskJournalName: readString(raw.inlineTaskJournalName, fallback.inlineTaskJournalName),
+		inlineTaskJournalAddStartDate: readBoolean(raw.inlineTaskJournalAddStartDate, fallback.inlineTaskJournalAddStartDate),
+		inlineTaskJournalAddScheduledDate: readBoolean(raw.inlineTaskJournalAddScheduledDate, fallback.inlineTaskJournalAddScheduledDate),
+		inlineTaskJournalHeading: readString(raw.inlineTaskJournalHeading, fallback.inlineTaskJournalHeading),
 		defaultEstimateMinutes: readNumber(raw.defaultEstimateMinutes, fallback.defaultEstimateMinutes),
 	};
 }

@@ -2888,7 +2888,8 @@ export class CalendarView extends ItemView {
 		const clip = header.createDiv('operon-calendar-mobile-timegrid-header-clip');
 		const days = clip.createDiv('operon-calendar-mobile-timegrid-header-days operon-calendar-mobile-timegrid-buffer-track');
 		this.applyMobileTimeGridBufferedTrackStyle(days, renderWindow);
-		const opensDailyNote = this.getSettings().calendarDayTitleAction === 'create-open-daily-note';
+		const dayTitleAction = this.getSettings().calendarDayTitleAction;
+		const opensDailyNote = dayTitleAction === 'create-open-daily-note' || dayTitleAction === 'create-open-journal-note';
 		const dayModels = preset.surfaceType === 'timeTrackerGrid'
 			? this.resolveTimeTrackerGridDayLaneModels(preset, renderWindow.bufferedDates)
 			: preset.surfaceType === 'timeGrid'
@@ -6522,7 +6523,8 @@ export class CalendarView extends ItemView {
 
 		const daysGrid = headerRow.createDiv('operon-calendar-day-header-grid');
 		daysGrid.style.gridTemplateColumns = `repeat(${Math.max(1, visibleDates.length)}, minmax(0, 1fr))`;
-		const opensDailyNote = this.getSettings().calendarDayTitleAction === 'create-open-daily-note';
+		const dayTitleAction = this.getSettings().calendarDayTitleAction;
+		const opensDailyNote = dayTitleAction === 'create-open-daily-note' || dayTitleAction === 'create-open-journal-note';
 		for (const dateKey of visibleDates) {
 			const cell = daysGrid.createDiv('operon-calendar-day-header-cell');
 			const dayDate = this.parseDateKey(dateKey);
@@ -8238,7 +8240,8 @@ export class CalendarView extends ItemView {
 
 		const daysGrid = headerRow.createDiv('operon-calendar-day-header-grid');
 		daysGrid.style.gridTemplateColumns = `repeat(${Math.max(1, visibleDates.length)}, minmax(0, 1fr))`;
-		const opensDailyNote = this.getSettings().calendarDayTitleAction === 'create-open-daily-note';
+		const dayTitleAction = this.getSettings().calendarDayTitleAction;
+		const opensDailyNote = dayTitleAction === 'create-open-daily-note' || dayTitleAction === 'create-open-journal-note';
 
 		for (const dateKey of visibleDates) {
 			const cell = daysGrid.createDiv('operon-calendar-day-header-cell');

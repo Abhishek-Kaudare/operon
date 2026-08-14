@@ -197,12 +197,17 @@ export interface CatalogPoliciesV1 {
 		fileTaskTargetFolder: string;
 		fileTaskTemplateFolder: string;
 		defaultFileTemplateId?: string;
-		inlineTaskSaveMode: 'daily-notes' | 'specific-file' | 'active-file' | 'ask-every-time';
+		inlineTaskSaveMode: 'daily-notes' | 'journals' | 'specific-file' | 'active-file' | 'ask-every-time';
 		inlineTaskTargetFile: string;
 		inlineTaskHeading: string;
 		dailyNoteAddsStartDate: boolean;
 		dailyNoteAddsScheduledDate: boolean;
 		createDailyNotesAsFileTasks: boolean;
+		journalName?: string;
+		journalHeading?: string;
+		journalAddsStartDate?: boolean;
+		journalAddsScheduledDate?: boolean;
+		createJournalNotesAsFileTasks?: boolean;
 		calendarInlineTaskHeading: string;
 		builtInTemplateCandidates: Array<{
 			id: string;
