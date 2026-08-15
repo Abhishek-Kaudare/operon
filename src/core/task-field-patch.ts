@@ -18,7 +18,7 @@ export interface AppliedTaskFieldPatchState {
 	tags: string[];
 }
 
-export type DependencyFieldKey = 'blocking' | 'blockedBy';
+export type DependencyFieldKey = 'blocking' | 'blockedBy' | 'relatesTo';
 
 export interface NormalizedDependencyPair {
 	blocking: string;
@@ -31,6 +31,7 @@ export function splitTaskListValue(value: string | undefined): string[] {
 }
 
 export function getOppositeDependencyFieldKey(fieldKey: DependencyFieldKey): DependencyFieldKey {
+	if (fieldKey === 'relatesTo') return 'relatesTo';
 	return fieldKey === 'blocking' ? 'blockedBy' : 'blocking';
 }
 

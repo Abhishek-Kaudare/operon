@@ -4815,20 +4815,43 @@ export function getFallbackStateIcon(
 	return normalizeTaskIconValue(settings.fallbackStateIcons.open);
 }
 
+function getRootParentFieldValues(
+	fieldValues: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+	let current = fieldValues;
+	if (typeof (window as any).operonGetTask === 'function') {
+		const getTask = (window as any).operonGetTask;
+		const visited = new Set<string>();
+		while (current && current['parentTask']) {
+			const parentId = current['parentTask'].trim();
+			if (!parentId || visited.has(parentId)) break;
+			visited.add(parentId);
+			const parentTask = getTask(parentId);
+			if (parentTask) {
+				current = parentTask.fieldValues;
+			} else {
+				break;
+			}
+		}
+	}
+	return current;
+}
+
 export function resolveTaskDisplayIcon(
 	settings: Pick<OperonSettings, 'fallbackStateIcons' | 'fallbackTaskIconSource' | 'pipelines' | 'priorities'>,
 	fieldValues: Record<string, string | undefined>,
 	checkbox: string,
 	workflowStatusIdentityIndex?: WorkflowStatusIdentityIndex,
 ): string {
-	const taskIcon = normalizeTaskIconValue(fieldValues['taskIcon']);
+	const effectiveFieldValues = getRootParentFieldValues(fieldValues);
+	const taskIcon = normalizeTaskIconValue(effectiveFieldValues['taskIcon']);
 	if (taskIcon) return taskIcon;
 
 	if (settings.fallbackTaskIconSource === 'pipelineStatusIcon') {
 		const pipelineStatusIcon = normalizeTaskIconValue(
 			findStatusDef(
 				settings.pipelines,
-				fieldValues['status'] ?? '',
+				effectiveFieldValues['status'] ?? '',
 				workflowStatusIdentityIndex,
 			)?.pipelineStatusIcon,
 		);
@@ -4837,7 +4860,7 @@ export function resolveTaskDisplayIcon(
 
 	if (settings.fallbackTaskIconSource === 'priorityIcon') {
 		const priorityIcon = normalizeTaskIconValue(
-			settings.priorities.find(priority => priority.label === fieldValues['priority'])?.priorityIcon,
+			settings.priorities.find(priority => priority.label === effectiveFieldValues['priority'])?.priorityIcon,
 		);
 		if (priorityIcon) return priorityIcon;
 	}

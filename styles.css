@@ -1088,6 +1088,7 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	width: auto;
 	height: auto;
 	margin-right: 0.35rem;
+	margin-left: 0.35rem;
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -1111,6 +1112,7 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	align-items: center;
 	justify-content: center;
 	margin-right: 0.35rem;
+	margin-left: 0.35rem;
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -1191,6 +1193,8 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	line-height: 0;
 	margin-top: 3px;
 	margin-bottom: 5px;
+	border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 4px;
 }
 
 .operon-live-preview-tail-wrap {
@@ -1426,6 +1430,7 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	justify-content: center;
 	width: auto;
 	height: auto;
+	margin-left: 0.35rem;
 	margin-right: 0.35rem;
 	padding: 0;
 	border: none;
@@ -5147,8 +5152,9 @@ body .operon-searchable-option-picker-panel .operon-searchable-option-picker-ite
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-	padding: 2px 0 3px;
+	padding: 4px 0 6px;
 	min-width: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .operon-filter-task-row.operon-filter-row-done .operon-reading-task-head {
@@ -29430,6 +29436,11 @@ button.operon-kanban-descendant-toggle:focus-visible {
 .markdown-reading-view ul > li.task-list-item.operon-rendered-inline-task-list-item {
 	margin-inline-start: 0;
 	padding-inline-start: 0;
+}
+
+.markdown-preview-view ul li.operon-rendered-inline-task-list-item ul li.operon-rendered-inline-task-list-item,
+.markdown-reading-view ul li.operon-rendered-inline-task-list-item ul li.operon-rendered-inline-task-list-item {
+	margin-inline-start: var(--list-indent, 2em);
 }
 
 .operon-rendered-inline-task-list-item::marker {

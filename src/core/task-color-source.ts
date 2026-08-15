@@ -111,12 +111,35 @@ export function resolveTaskStatusIconColorForTask(
 	return resolveTaskStatusIconColor(task.fieldValues, settings, workflowStatusIdentityIndex);
 }
 
+function getRootParentFieldValues(
+	fieldValues: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+	let current = fieldValues;
+	if (typeof (window as any).operonGetTask === 'function') {
+		const getTask = (window as any).operonGetTask;
+		const visited = new Set<string>();
+		while (current && current['parentTask']) {
+			const parentId = current['parentTask'].trim();
+			if (!parentId || visited.has(parentId)) break;
+			visited.add(parentId);
+			const parentTask = getTask(parentId);
+			if (parentTask) {
+				current = parentTask.fieldValues;
+			} else {
+				break;
+			}
+		}
+	}
+	return current;
+}
+
 export function resolveTaskStatusIconColor(
 	fieldValues: Record<string, string | undefined>,
 	settings: TaskColorSourceSettings & { taskStatusIconColorSource: TaskStatusIconColorSource },
 	workflowStatusIdentityIndex?: WorkflowStatusIdentityIndex,
 ): string | null {
-	return resolveTaskColorSource(fieldValues, settings.taskStatusIconColorSource, settings, {
+	// Force the color to be the taskColor set in the metadata, removing status/pipeline icon color behavior.
+	return resolveTaskColorSource(fieldValues, 'taskColor', settings, {
 		workflowStatusIdentityIndex,
 	});
 }
@@ -130,6 +153,8 @@ export function resolveTaskColorSource(
 		workflowStatusIdentityIndex?: WorkflowStatusIdentityIndex;
 	} = {},
 ): string | null {
+	const effectiveFieldValues = getRootParentFieldValues(fieldValues);
+
 	if (colorSource === 'noColor') {
 		return null;
 	}
@@ -143,18 +168,18 @@ export function resolveTaskColorSource(
 	}
 
 	if (colorSource === 'taskColor') {
-		return normalizeTaskFieldColor(fieldValues['taskColor']);
+		return normalizeTaskFieldColor(effectiveFieldValues['taskColor']);
 	}
 	if (colorSource === 'statusColor') {
 		const statusDef = findStatusDef(
 			settings.pipelines,
-			fieldValues['status'] ?? '',
+			effectiveFieldValues['status'] ?? '',
 			options.workflowStatusIdentityIndex,
 		);
 		return normalizeColor(statusDef?.color);
 	}
 
-	const priorityValue = normalizePriorityValue(fieldValues['priority'] ?? '');
+	const priorityValue = normalizePriorityValue(effectiveFieldValues['priority'] ?? '');
 	if (!priorityValue) return null;
 	const priorityDef = settings.priorities.find(priority => normalizePriorityValue(priority.label) === priorityValue);
 	return normalizeColor(priorityDef?.color);

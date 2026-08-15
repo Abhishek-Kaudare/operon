@@ -64,6 +64,7 @@ export const CANONICAL_KEYS: CanonicalKeyDef[] = [
 	// Dependencies
 	{ name: 'blocking', type: 'list', sync: 'auto', group: 'dependencies', position: 21, description: 'Task IDs this task is blocking' },
 	{ name: 'blockedBy', type: 'list', sync: 'auto', group: 'dependencies', position: 22, description: 'Task IDs blocking this task' },
+	{ name: 'relatesTo', type: 'list', sync: 'auto', group: 'dependencies', position: 22.5, description: 'Task IDs this task is related to (bidirectional)' },
 	// Workflow
 	{ name: 'assignees', type: 'list', sync: 'yes', group: 'workflow', position: 23, description: 'Task executors' },
 	{ name: 'contexts', type: 'list', sync: 'yes', group: 'workflow', position: 24, description: 'Environment or condition' },

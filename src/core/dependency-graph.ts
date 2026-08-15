@@ -240,6 +240,18 @@ export function validateDependencyMutations(
 		const oldIds = new Set(parseDependencyIdList(mutation.oldValue));
 		for (const linkedId of parseDependencyIdList(mutation.newValue)) {
 			if (oldIds.has(linkedId)) continue;
+			if (mutation.field === 'relatesTo') {
+				if (ownerId === normalizeTaskId(linkedId)) {
+					return {
+						ok: false,
+						reason: 'self',
+						fromId: ownerId,
+						toId: linkedId,
+						cyclePath: [ownerId],
+					};
+				}
+				continue;
+			}
 			addedEdges.push(getDependencyEdgeForField(ownerId, mutation.field, linkedId));
 		}
 		const owner = ensureGraphTask(graphTasks, ownerId);
