@@ -48,6 +48,13 @@ export function showParentTaskPicker(anchor: HTMLElement | DOMRect, options: Par
 
 	const pathValue = pathRow.createSpan('operon-parent-task-picker-path-value');
 
+	const hintRow = panel.createDiv('operon-parent-task-picker-hint-row');
+	hintRow.style.fontSize = 'var(--font-xs)';
+	hintRow.style.color = 'var(--text-muted)';
+	hintRow.style.padding = '4px 8px';
+	hintRow.style.borderTop = '1px solid var(--background-modifier-border)';
+	hintRow.textContent = "Setting a parent or subtask across files will automatically move the task into the file with parent task.";
+
 	const actions = panel.createDiv('operon-floating-actions operon-parent-task-picker-actions');
 	const countLabel = actions.createDiv('operon-icon-picker-count operon-parent-task-picker-count');
 	actions.appendChild(countLabel);

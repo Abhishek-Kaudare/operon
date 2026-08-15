@@ -127,7 +127,10 @@ test('relationship replacement updates both dependency owners and seals exact cu
 	assert.equal(verify(), true);
 	const committedFile = committedTasks.get('new0001');
 	assert.ok(committedFile);
-	committedFile.fieldValues.datetimeModified = '2026-07-27T15:00:00';
+	const laterDate = new Date(new Date(effectiveAt).getTime() + 10 * 3600 * 1000); // 10 hours later
+	const localPad = (part: number): string => String(part).padStart(2, '0');
+	committedFile.fieldValues.datetimeModified = `${laterDate.getFullYear()}-${localPad(laterDate.getMonth() + 1)}-${localPad(laterDate.getDate())}`
+		+ `T${localPad(laterDate.getHours())}:${localPad(laterDate.getMinutes())}:${localPad(laterDate.getSeconds())}`;
 	assert.equal(verify(), true);
 	const committedSource = committedTasks.get('src0001');
 	assert.ok(committedSource);

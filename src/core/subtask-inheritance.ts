@@ -127,7 +127,12 @@ export function resolveSubtaskInitialFieldsFromParentValues(
 	const parentFields = parentFieldValues ?? {};
 	if (parentTaskId) inherited.parentTask = parentTaskId;
 
-	for (const key of resolveInheritanceFieldKeys(parentTaskId, settings)) {
+	const keys = new Set(resolveInheritanceFieldKeys(parentTaskId, settings));
+	keys.add('priority');
+	keys.add('taskColor');
+	keys.add('taskIcon');
+
+	for (const key of keys) {
 		applyInheritedField(inherited, key, parentFields, parentTags, settings);
 	}
 

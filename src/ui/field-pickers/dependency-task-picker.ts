@@ -21,7 +21,7 @@ const PAGE_SIZE = 20;
 const LOAD_MORE_SCROLL_THRESHOLD_PX = 48;
 
 interface DependencyTaskPickerOptions {
-	fieldKey: DependencyFieldKey;
+	fieldKey: 'blocking' | 'blockedBy';
 	value: string;
 	oppositeValue: string;
 	allTasks: IndexedTask[];
@@ -31,7 +31,7 @@ interface DependencyTaskPickerOptions {
 	keyMappings?: KeyMapping[];
 	excludedIds?: string[];
 	closeOnSelect?: boolean;
-	onSave: (payload: Record<DependencyFieldKey, string>) => void;
+	onSave: (payload: Record<'blocking' | 'blockedBy', string>) => void;
 	onClose?: () => void;
 }
 

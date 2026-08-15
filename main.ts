@@ -636,6 +636,14 @@ import {
 	resolveTaskCreatorInlinePlacement,
 } from './src/core/task-creator-target-resolver';
 import {
+	countLeadingSpaces,
+	extractInlineTaskSubtree,
+	reindentSubtreeBlock,
+	insertSubtreeAfterLine,
+} from './src/core/inline-task-subtree-mover';
+
+
+import {
 	cloneFilterSet,
 	CURRENT_TASK_STATS_BACKFILL_VERSION,
 	DEFAULT_INLINE_TASK_TARGET_FILE,
@@ -1207,6 +1215,7 @@ export default class OperonPlugin extends Plugin {
 	indexer!: OperonIndexer;
 	writer!: TaskWriter;
 	dependencyManager!: DependencyManager;
+	private dirtyFilesForIndentation = new Set<string>();
 	aggregateCoordinator!: AggregateCoordinator;
 	taskStatsBackfillRunner!: TaskStatsBackfillRunner;
 	workflowFieldRenameCoordinator!: WorkflowFieldRenameCoordinator;
@@ -13778,6 +13787,7 @@ export default class OperonPlugin extends Plugin {
 		const indexV8Store = new IndexV8Store(this.app.vault.adapter, this.storage.indexV8Paths);
 		const indexV8PersistenceCoordinator = new IndexV8PersistenceCoordinator(indexV8Store);
 		this.indexer = new OperonIndexer(this.app, this.storage, indexV8PersistenceCoordinator, indexV8Store);
+		(window as any).operonGetTask = (id: string) => this.indexer.getTask(id);
 		await this.bindAgentRuntimeServices();
 		this.reminderDeliveryController = new ReminderDeliveryController({
 			app: this.app,
@@ -13984,6 +13994,7 @@ export default class OperonPlugin extends Plugin {
 		this.registerFileWatchers();
 		this.registerNativeFileTaskConversionMenus();
 		this.registerLivePreviewSessionWatchers();
+		this.registerFocusChangeIndentationWatcher();
 		this.registerFilterPerformanceWatchers();
 		this.registerCanonicalSettingsReloadWatchers();
 		this.registerEditableFocusRefreshWatchers();
@@ -21932,6 +21943,126 @@ export default class OperonPlugin extends Plugin {
 		);
 	}
 
+	private registerFocusChangeIndentationWatcher(): void {
+		this.registerEvent(
+			this.app.workspace.on('editor-change', (editor, info) => {
+				const filePath = getWorkspaceEventFilePath(info);
+				if (!filePath) return;
+				this.dirtyFilesForIndentation.add(filePath);
+			})
+		);
+
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', () => {
+				if (this.dirtyFilesForIndentation.size > 0) {
+					const dirtyList = Array.from(this.dirtyFilesForIndentation);
+					this.dirtyFilesForIndentation.clear();
+					for (const filePath of dirtyList) {
+						void this.processIndentationParentChangesForFile(filePath);
+					}
+				}
+			})
+		);
+	}
+
+	private async processIndentationParentChangesForFile(filePath: string): Promise<void> {
+		let activeEditor: Editor | null = null;
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			const view = leaf.view;
+			if (view instanceof MarkdownView && view.file?.path === filePath) {
+				activeEditor = view.editor;
+				break;
+			}
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile) || file.extension !== 'md') return;
+
+		let lines: string[] = [];
+		if (activeEditor) {
+			lines = activeEditor.getValue().split('\n');
+		} else {
+			const content = await this.app.vault.read(file);
+			lines = content.split('\n');
+		}
+
+		let fileChanged = false;
+		const taskStack: Array<{ level: number; operonId: string }> = [];
+
+		for (let i = 0; i < lines.length; i++) {
+			const lineText = lines[i];
+			const parsed = this.parseInlineTaskLine(lineText, i, filePath);
+			if (!parsed?.operonId) continue;
+
+			const rawIndent = countLeadingSpaces(lineText);
+
+			// Pop from the stack until the top task has an indentation level strictly less than rawIndent
+			while (taskStack.length > 0 && taskStack[taskStack.length - 1].level >= rawIndent) {
+				taskStack.pop();
+			}
+
+			let expectedParent = '';
+			let expectedLevel = 0;
+
+			if (taskStack.length > 0) {
+				const parentInfo = taskStack[taskStack.length - 1];
+				expectedParent = parentInfo.operonId;
+				expectedLevel = parentInfo.level + 1;
+			}
+
+			const currentParent = (parsed.fields.find(f => f.key === 'parentTask')?.value ?? '').trim();
+
+			let taskMutated = false;
+
+			if (expectedParent !== currentParent) {
+				this.setParsedTaskField(parsed, 'parentTask', expectedParent, 'text');
+				taskMutated = true;
+
+				// Inherit priority, color, and logo from the new parent task
+				if (expectedParent) {
+					const parentTask = this.indexer.getTask(expectedParent);
+					if (parentTask) {
+						if (parentTask.fieldValues['priority'] !== undefined) {
+							this.setParsedTaskField(parsed, 'priority', parentTask.fieldValues['priority'], 'text');
+						}
+						if (parentTask.fieldValues['taskColor'] !== undefined) {
+							this.setParsedTaskField(parsed, 'taskColor', parentTask.fieldValues['taskColor'], 'text');
+						}
+						if (parentTask.fieldValues['taskIcon'] !== undefined) {
+							this.setParsedTaskField(parsed, 'taskIcon', parentTask.fieldValues['taskIcon'], 'text');
+						}
+					}
+				}
+			}
+
+			const expectedIndentText = '\t'.repeat(expectedLevel);
+			const currentIndentText = lineText.substring(0, lineText.length - lineText.trimStart().length);
+
+			if (taskMutated || currentIndentText !== expectedIndentText) {
+				const serialized = serializeTask(parsed, this.settings.keyMappings);
+				lines[i] = expectedIndentText + serialized.trimStart();
+				if (activeEditor) {
+					activeEditor.setLine(i, lines[i]);
+				}
+				fileChanged = true;
+			}
+
+			taskStack.push({ level: expectedLevel, operonId: parsed.operonId });
+		}
+
+		if (fileChanged) {
+			if (!activeEditor) {
+				this.markInternalTaskWrite(filePath);
+				await this.app.vault.modify(file, lines.join('\n'));
+				await this.indexer.reindexFilePath(filePath, { notify: false });
+				this.refreshViews();
+			} else {
+				await this.indexer.forceReindexFilePathAfterMutation(filePath, { notify: false });
+				this.refreshViews();
+			}
+		}
+	}
+
 	/**
 	 * Unpin tasks that have reached a terminal state.
 	 * Called after every index update when pinnedDockAutoUnpinFinished is enabled.
@@ -24741,6 +24872,7 @@ export default class OperonPlugin extends Plugin {
 
 		const beforeTask = child;
 		const normalizedParentId = parentId?.trim() ?? '';
+
 		const timestamp = localNow();
 		const wrote = await this.writer.writeTaskFields(childId, {
 			parentTask: normalizedParentId,
@@ -24749,6 +24881,11 @@ export default class OperonPlugin extends Plugin {
 		if (!wrote) return;
 
 		await this.indexer.reindexFilePath(child.primary.filePath, { notify: false });
+
+		if (normalizedParentId && child.primary.format === 'inline') {
+			await this.realignInlineTaskLocationInFiles(childId, normalizedParentId);
+		}
+
 		try {
 			await this.refreshAggregateTotalsAfterTaskMutation(
 				beforeTask,
@@ -24761,6 +24898,122 @@ export default class OperonPlugin extends Plugin {
 			// fire-and-forget onTasksChanged aggregate path.
 			this.scheduleIndexSideEffects();
 		}
+	}
+
+	private async realignInlineTaskLocationInFiles(
+		childId: string,
+		parentId: string | null,
+	): Promise<{ filePath: string; lineNumber: number } | null> {
+		const child = this.indexer.getTask(childId);
+		if (!child || child.primary.format !== 'inline') return null;
+
+		const normalizedParentId = parentId?.trim() ?? '';
+		if (!normalizedParentId) return null;
+
+		const parent = this.indexer.getTask(normalizedParentId);
+		if (!parent) return null;
+
+		const childPath = child.primary.filePath;
+		const parentPath = parent.primary.filePath;
+
+		// 1. Read files
+		const childFile = this.app.vault.getAbstractFileByPath(childPath);
+		const parentFile = this.app.vault.getAbstractFileByPath(parentPath);
+		if (!(childFile instanceof TFile) || !(parentFile instanceof TFile)) return null;
+
+		let childContent = await this.app.vault.read(childFile);
+		let parentContent = childPath === parentPath ? childContent : await this.app.vault.read(parentFile);
+
+		// 2. Find child line
+		const childLines = childContent.split('\n');
+		let childLineIndex = child.primary.lineNumber;
+		if (childLineIndex < 0 || childLineIndex >= childLines.length || !childLines[childLineIndex].includes(childId)) {
+			childLineIndex = childLines.findIndex(line => line.includes(childId));
+		}
+		if (childLineIndex === -1) return null;
+
+		// 3. Find parent line
+		const parentLines = parentContent.split('\n');
+		let parentLineIndex = parent.primary.lineNumber;
+		if (parentLineIndex < 0 || parentLineIndex >= parentLines.length || !parentLines[parentLineIndex].includes(normalizedParentId)) {
+			parentLineIndex = parentLines.findIndex(line => line.includes(normalizedParentId));
+		}
+		if (parentLineIndex === -1) return null;
+
+		// Check if already correctly placed (child is under parent in the same file, with correct relative indentation)
+		if (childPath === parentPath && childLineIndex > parentLineIndex) {
+			const childIndent = countLeadingSpaces(childLines[childLineIndex]);
+			const parentIndent = countLeadingSpaces(childLines[parentLineIndex]);
+			// Check if all lines between parent and child are either blank or part of parent/other child subtree
+			let isNested = true;
+			for (let i = parentLineIndex + 1; i < childLineIndex; i++) {
+				if (childLines[i].trim() !== '' && countLeadingSpaces(childLines[i]) <= parentIndent) {
+					isNested = false;
+					break;
+				}
+			}
+			if (isNested && childIndent === parentIndent + 1) {
+				// Already correctly placed and nested! No need to move.
+				return { filePath: childPath, lineNumber: childLineIndex };
+			}
+		}
+
+		// 4. Extract subtree from child file
+		const extraction = extractInlineTaskSubtree(childLines, childLineIndex);
+		if (!extraction) return null;
+
+		// Update parentContent if it's the same file
+		if (childPath === parentPath) {
+			parentContent = extraction.remainingLines.join('\n');
+		}
+
+		// 5. Re-find parent line in the updated parent lines
+		const updatedParentLines = parentContent.split('\n');
+		let updatedParentLineIndex = parent.primary.lineNumber;
+		if (updatedParentLineIndex < 0 || updatedParentLineIndex >= updatedParentLines.length || !updatedParentLines[updatedParentLineIndex].includes(normalizedParentId)) {
+			updatedParentLineIndex = updatedParentLines.findIndex(line => line.includes(normalizedParentId));
+		}
+		if (updatedParentLineIndex === -1) return null;
+
+		// 6. Find end of parent's subtree to append
+		const parentSubtree = extractInlineTaskSubtree(updatedParentLines, updatedParentLineIndex);
+		const insertAfterIndex = parentSubtree ? parentSubtree.endLineIndex : updatedParentLineIndex;
+
+		// 7. Re-indent child's subtree
+		const parentLineText = updatedParentLines[updatedParentLineIndex];
+		const parentIndent = countLeadingSpaces(parentLineText);
+		const targetIndent = parentIndent + 1;
+		const reindentedBlock = reindentSubtreeBlock(extraction.block, targetIndent);
+
+		// 8. Insert child's subtree
+		const nextParentContent = insertSubtreeAfterLine(updatedParentLines, insertAfterIndex, reindentedBlock);
+
+		// 9. Write back
+		if (childPath === parentPath) {
+			this.markInternalTaskWrite(childPath);
+			await this.app.vault.modify(childFile, nextParentContent);
+		} else {
+			this.markInternalTaskWrite(childPath);
+			await this.app.vault.modify(childFile, extraction.remainingLines.join('\n'));
+
+			this.markInternalTaskWrite(parentPath);
+			await this.app.vault.modify(parentFile, nextParentContent);
+		}
+
+		// 10. Reindex both
+		await this.indexer.reindexFilePath(childPath, { notify: false });
+		if (childPath !== parentPath) {
+			await this.indexer.reindexFilePath(parentPath, { notify: false });
+		}
+
+		// Find the new line number of the child in the target file
+		const finalLines = nextParentContent.split('\n');
+		const finalChildLineIndex = finalLines.findIndex(line => line.includes(childId));
+
+		return {
+			filePath: parentPath,
+			lineNumber: finalChildLineIndex !== -1 ? finalChildLineIndex : 0,
+		};
 	}
 
 	private async syncExistingSubtasksForParent(parentId: string, nextSubtaskIds: string[]): Promise<void> {
@@ -24793,7 +25046,7 @@ export default class OperonPlugin extends Plugin {
 	): DependencyFieldMutation[] {
 		const changes: DependencyFieldMutation[] = [];
 		const payloadKeys = new Set(Object.keys(payload));
-		for (const field of ['blocking', 'blockedBy'] as const) {
+		for (const field of ['blocking', 'blockedBy', 'relatesTo'] as const) {
 			const oldValue = task.fieldValues[field] ?? '';
 			const hasPayloadValue = payloadKeys.has(field);
 			if (!hasPayloadValue && mode !== 'replace') continue;
@@ -24812,7 +25065,7 @@ export default class OperonPlugin extends Plugin {
 		if (!normalizedOperonId) return [];
 		const existingTask = this.indexer.getTask(normalizedOperonId);
 		const changes: DependencyFieldMutation[] = [];
-		for (const field of ['blocking', 'blockedBy'] as const) {
+		for (const field of ['blocking', 'blockedBy', 'relatesTo'] as const) {
 			const oldValue = existingTask?.fieldValues[field] ?? '';
 			const newValue = fieldValues[field] ?? '';
 			if (oldValue === newValue) continue;
@@ -25491,6 +25744,13 @@ export default class OperonPlugin extends Plugin {
 		if (insertedLineNumber === null) return null;
 
 		const lines = content.split('\n');
+
+		// Determine parent's indentation depth so subtask is indented one level deeper
+		const parentLineIndex = insertedLineNumber - 1;
+		const parentLineText = parentLineIndex >= 0 ? (lines[parentLineIndex] ?? '') : '';
+		const parentIndent = countLeadingSpaces(parentLineText);
+		const childIndent = '\t'.repeat(parentIndent + 1); // 1 tab per nesting level
+
 		const createdLine = this.buildTaskCreatorInlineTaskLine(
 			draft,
 			parentPath,
@@ -25501,7 +25761,8 @@ export default class OperonPlugin extends Plugin {
 		if (!createdLine) return null;
 		if (!this.validateDependencyDraftOrShow(createdLine.operonId, createdLine.fieldValues)) return null;
 
-		lines.splice(insertedLineNumber, 0, createdLine.taskLine);
+		const indentedTaskLine = childIndent + createdLine.taskLine.trimStart();
+		lines.splice(insertedLineNumber, 0, indentedTaskLine);
 		this.suppressRawTaskCreationNotice(createdLine.operonId);
 		await this.app.vault.modify(parentFile, lines.join('\n'));
 		return {
@@ -26815,6 +27076,9 @@ export default class OperonPlugin extends Plugin {
 			const freshTask = this.indexer.getTask(task.operonId) ?? task;
 			this.maybeApplyScheduledAutomationToParsedTask(parsed, freshTask.fieldValues);
 			const payload = this.buildFieldPayload(parsed);
+
+			const newParentId = (payload['parentTask'] ?? '').trim();
+
 			this.preserveAuthoritativeRepeatOccurrenceDate(freshTask, parsed, payload);
 			if (!this.validateDependencyPayloadChanges(freshTask, payload, 'replace')) return null;
 			if (!await this.guardTaskStatusChangeOrShow(freshTask, payload, { mode: 'replace' })) return null;
@@ -26929,6 +27193,13 @@ export default class OperonPlugin extends Plugin {
 				this.resolveAfterTaskForRecurrenceMaterialization(afterTask ?? null, recurrenceResult),
 				{ modifiedTimestamp, autoUnpinCandidate: afterTask ?? null },
 			);
+			if (newParentId) {
+				const realigned = await this.realignInlineTaskLocationInFiles(freshTask.operonId, newParentId);
+				if (realigned && request.fileBody) {
+					request.fileBody.filePath = realigned.filePath;
+					request.fileBody.dirty = false;
+				}
+			}
 			this.scheduleProjectSerialIndexReconcile();
 			this.refreshViews();
 			return true;
@@ -27446,6 +27717,21 @@ export default class OperonPlugin extends Plugin {
 		return { action: 'proceed', scope, nextSnapshot };
 	}
 
+	private getRecursiveSubtaskIds(operonId: string): string[] {
+		const descendants: string[] = [];
+		const visit = (id: string) => {
+			const children = this.indexer.secondary.getChildIds(id);
+			if (children) {
+				for (const childId of children) {
+					descendants.push(childId);
+					visit(childId);
+				}
+			}
+		};
+		visit(operonId);
+		return descendants;
+	}
+
 	private async updateTaskFieldsAndRefresh(
 		operonId: string,
 		payload: Record<string, string>,
@@ -27522,6 +27808,27 @@ export default class OperonPlugin extends Plugin {
 			`fallbackReason=${coalescedFallbackReason}`,
 		);
 		if (!wroteTask) return false;
+
+		const propagationKeys = ['priority', 'taskColor', 'taskIcon'];
+		const keysToPropagate = propagationKeys.filter(k => normalizedPayload[k] !== undefined);
+		if (keysToPropagate.length > 0) {
+			const descendantIds = this.getRecursiveSubtaskIds(operonId);
+			for (const subId of descendantIds) {
+				const subtaskPayload: Record<string, string> = {};
+				for (const key of keysToPropagate) {
+					subtaskPayload[key] = normalizedPayload[key];
+				}
+				await this.writer.writeTaskFields(subId, subtaskPayload, {
+					mode: 'merge',
+					reindex: 'none',
+					touchAncestors: false,
+				});
+				const subTask = this.indexer.getTask(subId);
+				if (subTask) {
+					await this.indexer.reindexFilePath(subTask.primary.filePath, { notify: false });
+				}
+			}
+		}
 
 		const reindexStartedAt = options.statusCycleTrace ? enginePerfNow() : 0;
 		const statusCycleReason = options.refreshReason ?? 'refresh';

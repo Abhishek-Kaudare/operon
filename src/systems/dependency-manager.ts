@@ -50,7 +50,7 @@ export class DependencyManager {
 				throw new Error(`Invalid dependency edge: ${validation.reason}`);
 			}
 		}
-		const inverseField = field === 'blocking' ? 'blockedBy' : 'blocking';
+		const inverseField = field === 'relatesTo' ? 'relatesTo' : (field === 'blocking' ? 'blockedBy' : 'blocking');
 
 		const oldIds = new Set(parseDependencyIdList(oldValue));
 		const newIds = new Set(parseDependencyIdList(newValue));
@@ -119,6 +119,14 @@ export class DependencyManager {
 				if (!this.canRepairAssertedEdge(sourceId, task.operonId)) continue;
 				writeCount += 1;
 				writes.push(this.addInverse(sourceId, 'blocking', task.operonId));
+			}
+			for (const targetId of parseDependencyIdList(task.fieldValues['relatesTo'])) {
+				if (this.hasDuplicateOperonIdConflict(targetId)) continue;
+				const target = this.indexer.getTask(targetId);
+				if (!target) continue;
+				if (parseDependencyIdList(target.fieldValues['relatesTo'] ?? '').includes(task.operonId)) continue;
+				writeCount += 1;
+				writes.push(this.addInverse(targetId, 'relatesTo', task.operonId));
 			}
 		}
 		await Promise.all(writes);
@@ -201,6 +209,11 @@ export class DependencyManager {
 		const blockedByIds = parseDependencyIdList(task.fieldValues['blockedBy'] ?? '');
 		for (const targetId of blockedByIds) {
 			writes.push(this.removeInverse(targetId, 'blocking', operonId));
+		}
+
+		const relatesToIds = parseDependencyIdList(task.fieldValues['relatesTo'] ?? '');
+		for (const targetId of relatesToIds) {
+			writes.push(this.removeInverse(targetId, 'relatesTo', operonId));
 		}
 		await Promise.all(writes);
 	}
