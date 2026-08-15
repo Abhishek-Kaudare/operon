@@ -7,6 +7,7 @@ import { splitTaskListValue } from '../core/task-field-patch';
 import type { ReminderPickerFieldKey } from '../core/reminder-list-mutation';
 import { OperonSettings, InlineTaskCompactChipItem, InlineTaskCompactChipKey, INLINE_TASK_COMPACT_CHIP_ORDER, INLINE_TASK_COMPACT_FALLBACK_ICONS, KeyMapping } from '../types/settings';
 import { isInternalCanonicalKey, isReminderStorageKey } from '../types/keys';
+import { findStatusDef, parseStatusValue } from '../types/pipeline';
 import { IndexedTask } from '../types/fields';
 import { formatAssigneeDisplay } from './field-pickers/assignees-picker';
 import { formatContextDisplay } from './field-pickers/contexts-picker';
@@ -200,7 +201,12 @@ export function buildInlineTaskCompactChipEntries(
 			case 'status': {
 				const value = fieldValues['status']?.trim();
 				if (!value) break;
-				entries.push(createEntry(settings, key, value, item?.iconOnly === true, 'status'));
+				const statusDef = findStatusDef(settings.pipelines, value, options?.workflowStatusIdentityIndex);
+				const displayLabel = statusDef?.label ?? parseStatusValue(value)?.status ?? value;
+				const displayIcon = statusDef?.pipelineStatusIcon ?? 'circle';
+				const entry = createEntry(settings, key, displayLabel, false, 'status');
+				entry.icon = displayIcon;
+				entries.push(entry);
 				break;
 			}
 			case 'blocking':

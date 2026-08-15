@@ -76,7 +76,7 @@ export function showStatusPicker(anchor: HTMLElement | DOMRect, options: StatusP
 			dot.style.background = match.color;
 
 			const label = item.createSpan('operon-status-item-name');
-			label.textContent = match.value;
+			label.textContent = match.statusLabel;
 
 			item.addEventListener('mouseenter', () => {
 				if (activeIndex !== index) {

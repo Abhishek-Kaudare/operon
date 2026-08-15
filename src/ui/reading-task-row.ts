@@ -4,7 +4,7 @@ import { showDatePicker, type ManualDatePickerOptions } from './field-pickers/da
 import { showPriorityPicker } from './field-pickers/priority-picker';
 import { showEstimatePicker } from './field-pickers/estimate-picker';
 import { InlineTaskCompactChipItem, OperonSettings, resolveTaskDisplayIcon } from '../types/settings';
-import { findStatusDef, Pipeline, resolveWorkflowStatus } from '../types/pipeline';
+import { composeStatusValue, findStatusDef, Pipeline, resolveWorkflowStatus } from '../types/pipeline';
 import {
 	buildWorkflowStatusIdentityIndex,
 	type WorkflowStatusIdentityIndex,
@@ -177,7 +177,7 @@ export function buildReadingTaskRowElement(
 		iconButton.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			runReadingRowStatusCycle(callbacks, task.operonId);
+			callbacks.navigateToTask(task);
 		});
 	}
 	if (!readOnly && callbacks.onContextualAction) {
@@ -261,6 +261,9 @@ export function buildReadingTaskRowElement(
 		const renderEntry = readOnly && entry.interactive ? { ...entry, interactive: false } : entry;
 		const chip = createInlineTaskCompactChipElement(renderEntry, 'operon-reading-task-chip operon-task-chip');
 		applyCompactChipVisualStyles(chip, renderEntry, task, callbacks, statusColor, taskColor);
+		if (renderEntry.key === 'status' && renderEntry.interactive) {
+			bindStatusHoverDropdown(chip, task, callbacks, statusColor, taskColor, workflowStatusIdentityIndex);
+		}
 		if (renderEntry.iconOnly) {
 			bindAdaptiveIconOnlyExpansion(chip, renderEntry.label, taskColor ?? null);
 			if (renderEntry.externalUrl) {
@@ -600,8 +603,7 @@ function attachReadingChipAction(
 				}
 				break;
 			case 'status':
-				runReadingRowStatusCycle(callbacks, task.operonId);
-				onCommit?.();
+				// Handled by bindStatusHoverDropdown
 				break;
 			case 'priority':
 					showPriorityPicker(chip, {
@@ -814,4 +816,132 @@ function el<K extends keyof HTMLElementTagNameMap>(
 	const element = createOwnerElement(owner, tag);
 	if (className) element.className = className;
 	return element;
+}
+
+function bindStatusHoverDropdown(
+	chip: HTMLElement,
+	task: IndexedTask,
+	callbacks: ReadingTaskRowCallbacks,
+	statusColor: string,
+	taskColor: string | null,
+	workflowStatusIdentityIndex: WorkflowStatusIdentityIndex,
+): void {
+	const openDropdown = () => {
+		if ((window as any).activeOperonStatusDropdown) {
+			if ((window as any).activeOperonStatusDropdownAnchor === chip) {
+				return; // Already open for this chip
+			}
+			(window as any).activeOperonStatusDropdown.remove();
+			(window as any).activeOperonStatusDropdown = null;
+			(window as any).activeOperonStatusDropdownAnchor = null;
+		}
+
+		const dropdown = chip.ownerDocument.createElement('div');
+		dropdown.className = 'operon-status-hover-dropdown';
+
+		const pipelines = callbacks.getPipelines();
+		const currentStatusValue = task.fieldValues['status'];
+		let activePipeline = pipelines.find(pl => 
+			pl.statuses.some(st => composeStatusValue(pl.name, st.label) === currentStatusValue)
+		);
+		if (!activePipeline && pipelines.length > 0) {
+			activePipeline = pipelines[0];
+		}
+
+		if (activePipeline) {
+			for (const status of activePipeline.statuses) {
+				const item = chip.ownerDocument.createElement('button');
+				item.type = 'button';
+				item.className = 'operon-status-dropdown-item';
+				
+				const logoEl = chip.ownerDocument.createElement('span');
+				logoEl.className = 'operon-status-logo';
+				if (status.pipelineStatusIcon) {
+					setIcon(logoEl, status.pipelineStatusIcon);
+				} else {
+					setIcon(logoEl, 'circle');
+				}
+				logoEl.style.color = status.color;
+				item.appendChild(logoEl);
+
+				const labelEl = chip.ownerDocument.createElement('span');
+				labelEl.className = 'operon-status-item-name';
+				labelEl.textContent = status.label;
+				item.appendChild(labelEl);
+
+				item.addEventListener('click', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					const nextValue = composeStatusValue(activePipeline.name, status.label);
+					void callbacks.updateField(task.operonId, 'status', nextValue);
+					closeDropdown();
+				});
+				dropdown.appendChild(item);
+			}
+		}
+
+		chip.ownerDocument.body.appendChild(dropdown);
+		(window as any).activeOperonStatusDropdown = dropdown;
+		(window as any).activeOperonStatusDropdownAnchor = chip;
+
+		const rect = chip.getBoundingClientRect();
+		dropdown.style.left = `${rect.left}px`;
+		dropdown.style.top = `${rect.bottom + 4}px`;
+
+		let timeoutId: any = null;
+		const startCloseTimeout = () => {
+			timeoutId = setTimeout(() => {
+				closeDropdown();
+			}, 200);
+		};
+		const clearCloseTimeout = () => {
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+				timeoutId = null;
+			}
+		};
+
+		chip.addEventListener('mouseleave', startCloseTimeout);
+		chip.addEventListener('mouseenter', clearCloseTimeout);
+		dropdown.addEventListener('mouseleave', startCloseTimeout);
+		dropdown.addEventListener('mouseenter', clearCloseTimeout);
+
+		const docClickListener = (e: MouseEvent) => {
+			if (!dropdown.contains(e.target as Node) && !chip.contains(e.target as Node)) {
+				closeDropdown();
+			}
+		};
+		chip.ownerDocument.addEventListener('click', docClickListener, true);
+
+		const closeDropdown = () => {
+			dropdown.remove();
+			if ((window as any).activeOperonStatusDropdown === dropdown) {
+				(window as any).activeOperonStatusDropdown = null;
+				(window as any).activeOperonStatusDropdownAnchor = null;
+			}
+			chip.ownerDocument.removeEventListener('click', docClickListener, true);
+			chip.removeEventListener('mouseleave', startCloseTimeout);
+			chip.removeEventListener('mouseenter', clearCloseTimeout);
+			dropdown.removeEventListener('mouseleave', startCloseTimeout);
+			dropdown.removeEventListener('mouseenter', clearCloseTimeout);
+		};
+	};
+
+	chip.addEventListener('mouseenter', () => {
+		openDropdown();
+	});
+
+	chip.addEventListener('click', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if ((window as any).activeOperonStatusDropdownAnchor === chip) {
+			if ((window as any).activeOperonStatusDropdown) {
+				(window as any).activeOperonStatusDropdown.remove();
+				(window as any).activeOperonStatusDropdown = null;
+				(window as any).activeOperonStatusDropdownAnchor = null;
+			}
+		} else {
+			openDropdown();
+		}
+	});
 }
