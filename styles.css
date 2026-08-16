@@ -1081,13 +1081,23 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	overflow: hidden;
 }
 
+.cm-content .cm-line.HyperMD-task-line,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-task-line {
+	padding-top: 5px;
+}
+
+
+.markdown-source-view.mod-cm6 .cm-indent::before {
+	border-inline-end: 0px;
+}
+
 .operon-live-preview-status-icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	width: auto;
 	height: auto;
-	margin-right: 0.35rem;
+	margin-right: 1rem;
 	margin-left: 0.35rem;
 	padding: 0;
 	border: none;
@@ -1189,12 +1199,22 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 
 .operon-live-preview-tail {
 	display: inline-block;
-	width: 100%;
+	width: calc(100% + var(--list-indent, 32px));
 	line-height: 0;
 	margin-top: 3px;
 	margin-bottom: 5px;
-	border-bottom: 1px solid var(--background-modifier-border);
-    padding-bottom: 4px;
+	margin-left: calc(-1 * var(--list-indent, 32px));
+	padding-bottom: 4px;
+	position: relative;
+}
+
+.operon-live-preview-tail::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0.7rem; /* Starts the border 0.35rem from the left edge */
+    right: 0;
+    border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .operon-live-preview-tail-wrap {
@@ -1202,10 +1222,10 @@ body.operon-tweak-compact-sidebar-tab-icons:not(.is-mobile) .mod-sidedock .works
 	align-items: flex-start;
 	flex-wrap: wrap;
 	gap: 8px;
-	margin-top: 0;
-	margin-left: 1.45em;
-	width: calc(100% - 1.45em);
-	max-width: calc(100% - 1.45em);
+	margin-top: 5px;
+	margin-left: 0.7rem;
+	width: calc(100% - 0.35rem);
+	max-width: calc(100% - 0.35rem);
 	box-sizing: border-box;
 	min-width: 0;
 	position: relative;
@@ -5336,25 +5356,6 @@ body .operon-searchable-option-picker-panel .operon-searchable-option-picker-ite
 	flex-direction: column;
 	gap: 2px;
 	min-width: 140px;
-}
-
-.operon-status-dropdown-item {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	width: 100%;
-	padding: 6px 8px;
-	border: none;
-	background: transparent;
-	border-radius: 4px;
-	color: var(--text-normal);
-	font-size: 13px;
-	text-align: left;
-	cursor: pointer;
-}
-
-.operon-status-dropdown-item:hover {
-	background: var(--background-modifier-hover);
 }
 
 .operon-status-logo {
@@ -13526,13 +13527,20 @@ body .operon-task-editor button.operon-task-editor-workflow-action-button.is-loc
 }
 
 .operon-status-dropdown-item {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 6px 12px;
-	cursor: pointer;
-	font-size: 13px;
-	transition: background 0.08s;
+    display: flex;
+    align-items: center;         /* Vertically center icon and text */
+    justify-content: flex-start; /* Push contents to the left */
+    gap: 8px;                    /* Space between icon and text */
+    width: 100%;
+    padding: 6px 12px;           /* Standardized padding */
+    border: none;
+    background: transparent;
+    border-radius: 8px;          /* Matches your top grouped selector */
+    color: var(--text-normal);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.08s ease, outline 0.08s ease;
 }
 
 .operon-status-dropdown-item:hover {
@@ -13549,6 +13557,12 @@ body .operon-task-editor button.operon-task-editor-workflow-action-button.is-loc
 	height: 8px;
 	border-radius: 50%;
 	flex-shrink: 0;
+}
+
+.operon-chip-status .operon-inline-compact-chip-icon svg circle,
+.operon-chip[data-chip-key='status'] .operon-inline-compact-chip-icon svg circle,
+.operon-status-hover-dropdown .operon-status-logo svg circle {
+	fill: currentColor;
 }
 
 .operon-status-item-name {
