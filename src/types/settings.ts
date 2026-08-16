@@ -819,8 +819,8 @@ export const TASK_EDITOR_MOBILE_CORE_TOOL_ORDER = [
 export type TaskEditorMobileCoreToolKey = typeof TASK_EDITOR_MOBILE_CORE_TOOL_ORDER[number];
 
 export const INLINE_TASK_COMPACT_CHIP_ORDER = [
-	'priority',
 	'status',
+	'priority',
 	'parentTask',
 	'blocking',
 	'blockedBy',
@@ -1019,8 +1019,8 @@ export interface TaskFinderShortcutItem {
 
 function buildDefaultInlineTaskCompactChipItems(): InlineTaskCompactChipItem[] {
 	return [
-		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'status', visible: true, iconOnly: true },
+		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'parentTask', visible: true, iconOnly: true },
 		{ key: 'blocking', visible: false, iconOnly: false },
 		{ key: 'blockedBy', visible: false, iconOnly: false },
@@ -1109,8 +1109,8 @@ export function buildCompatibilityTaskEditorWorkflowPickerItems(): TaskEditorWor
 
 function buildDefaultFilterTaskCompactChipItems(): InlineTaskCompactChipItem[] {
 	return [
-		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'status', visible: true, iconOnly: true },
+		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'parentTask', visible: true, iconOnly: true },
 		{ key: 'blocking', visible: false, iconOnly: false },
 		{ key: 'blockedBy', visible: false, iconOnly: false },
@@ -1138,8 +1138,8 @@ function buildDefaultFilterTaskCompactChipItems(): InlineTaskCompactChipItem[] {
 
 function buildDefaultKanbanTaskCompactChipItems(): InlineTaskCompactChipItem[] {
 	return [
-		{ key: 'priority', visible: false, iconOnly: false },
 		{ key: 'status', visible: false, iconOnly: false },
+		{ key: 'priority', visible: false, iconOnly: false },
 		{ key: 'parentTask', visible: false, iconOnly: false },
 		{ key: 'blocking', visible: false, iconOnly: false },
 		{ key: 'blockedBy', visible: false, iconOnly: false },
@@ -1167,8 +1167,8 @@ function buildDefaultKanbanTaskCompactChipItems(): InlineTaskCompactChipItem[] {
 
 function buildDefaultTaskFinderCompactChipItems(): InlineTaskCompactChipItem[] {
 	return [
-		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'status', visible: false, iconOnly: false },
+		{ key: 'priority', visible: true, iconOnly: false },
 		{ key: 'parentTask', visible: true, iconOnly: false },
 		{ key: 'blocking', visible: false, iconOnly: false },
 		{ key: 'blockedBy', visible: false, iconOnly: false },
@@ -4553,7 +4553,14 @@ function normalizeCompactChipItems(
 	defaults: InlineTaskCompactChipItem[],
 	keyMappings?: readonly KeyMapping[],
 ): InlineTaskCompactChipItem[] {
-	return normalizeSurfaceItems(raw, defaults, INLINE_TASK_COMPACT_CHIP_ORDER, keyMappings, mapping => mapping.showInChips === true);
+	const items = normalizeSurfaceItems(raw, defaults, INLINE_TASK_COMPACT_CHIP_ORDER, keyMappings, mapping => mapping.showInChips === true);
+	const statusIdx = items.findIndex(item => item.key === 'status');
+	const priorityIdx = items.findIndex(item => item.key === 'priority');
+	if (statusIdx > priorityIdx && priorityIdx !== -1) {
+		const [statusItem] = items.splice(statusIdx, 1);
+		items.splice(priorityIdx, 0, statusItem);
+	}
+	return items;
 }
 
 function normalizeSurfaceItems<T extends { key: string; visible: boolean; iconOnly?: boolean }>(

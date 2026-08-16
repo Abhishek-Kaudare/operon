@@ -3,8 +3,9 @@ import { IndexedTask } from '../types/fields';
 import { showDatePicker, type ManualDatePickerOptions } from './field-pickers/date-picker';
 import { showPriorityPicker } from './field-pickers/priority-picker';
 import { showEstimatePicker } from './field-pickers/estimate-picker';
+import { bindStatusHoverDropdown } from './field-pickers/status-hover-dropdown';
 import { InlineTaskCompactChipItem, OperonSettings, resolveTaskDisplayIcon } from '../types/settings';
-import { findStatusDef, Pipeline, resolveWorkflowStatus } from '../types/pipeline';
+import { composeStatusValue, findStatusDef, Pipeline, resolveWorkflowStatus } from '../types/pipeline';
 import {
 	buildWorkflowStatusIdentityIndex,
 	type WorkflowStatusIdentityIndex,
@@ -177,7 +178,7 @@ export function buildReadingTaskRowElement(
 		iconButton.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			runReadingRowStatusCycle(callbacks, task.operonId);
+			callbacks.navigateToTask(task);
 		});
 	}
 	if (!readOnly && callbacks.onContextualAction) {
@@ -261,6 +262,17 @@ export function buildReadingTaskRowElement(
 		const renderEntry = readOnly && entry.interactive ? { ...entry, interactive: false } : entry;
 		const chip = createInlineTaskCompactChipElement(renderEntry, 'operon-reading-task-chip operon-task-chip');
 		applyCompactChipVisualStyles(chip, renderEntry, task, callbacks, statusColor, taskColor);
+		if (renderEntry.key === 'status' && renderEntry.interactive) {
+			bindStatusHoverDropdown(chip, {
+				operonId: task.operonId,
+				currentStatusValue: task.fieldValues['status'],
+				pipelines: callbacks.getPipelines(),
+				workflowStatusIdentityIndex,
+				updateStatus: (nextValue) => {
+					void callbacks.updateField(task.operonId, 'status', nextValue);
+				},
+			});
+		}
 		if (renderEntry.iconOnly) {
 			bindAdaptiveIconOnlyExpansion(chip, renderEntry.label, taskColor ?? null);
 			if (renderEntry.externalUrl) {
@@ -542,6 +554,7 @@ function attachReadingChipAction(
 	onCommit?: () => void,
 	taskColor?: string | null,
 ): void {
+	if (entry.key === 'status') return;
 	chip.addEventListener('click', (event) => {
 		event.preventDefault();
 		event.stopPropagation();
@@ -600,8 +613,7 @@ function attachReadingChipAction(
 				}
 				break;
 			case 'status':
-				runReadingRowStatusCycle(callbacks, task.operonId);
-				onCommit?.();
+				// Handled by bindStatusHoverDropdown
 				break;
 			case 'priority':
 					showPriorityPicker(chip, {
@@ -815,3 +827,5 @@ function el<K extends keyof HTMLElementTagNameMap>(
 	if (className) element.className = className;
 	return element;
 }
+
+

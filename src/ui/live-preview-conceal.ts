@@ -21,6 +21,7 @@ import { PriorityDefinition } from '../types/priority';
 import { showDatePicker, type ManualDatePickerOptions } from './field-pickers/date-picker';
 import { showPriorityPicker } from './field-pickers/priority-picker';
 import { showEstimatePicker } from './field-pickers/estimate-picker';
+import { bindStatusHoverDropdown } from './field-pickers/status-hover-dropdown';
 import {
 	buildInlineTaskCompactChipEntries,
 	createInlineTaskCompactChipElement,
@@ -424,6 +425,18 @@ class MetadataTailWidget extends WidgetType {
 				this.workflowStatusIdentityIndex,
 			);
 			bindLivePreviewChipHoverState(chip);
+			if (entry.key === 'status' && entry.interactive && operonId) {
+				bindStatusHoverDropdown(chip, {
+					operonId,
+					currentStatusValue: fieldValues['status'],
+					pipelines: this.pipelines,
+					workflowStatusIdentityIndex: this.workflowStatusIdentityIndex,
+					updateStatus: (nextValue) => {
+						const restoreCursor = getLivePreviewDescriptionEndCursor(this.task, view, this.callbacks);
+						void this.callbacks.updateField(operonId, 'status', nextValue, restoreCursor);
+					},
+				});
+			}
 			if (entry.iconOnly) {
 				bindAdaptiveIconOnlyExpansion(chip, entry.label, taskColor ?? null);
 				if (entry.externalUrl) {
@@ -1102,6 +1115,7 @@ function attachLivePreviewChipAction(
 	task: ParsedTask,
 	onCommit?: () => void,
 ): void {
+	if (entry.key === 'status') return;
 	chip.addEventListener('click', (event) => {
 		event.preventDefault();
 		event.stopPropagation();

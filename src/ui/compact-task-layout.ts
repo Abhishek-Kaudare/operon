@@ -7,6 +7,7 @@ import { splitTaskListValue } from '../core/task-field-patch';
 import type { ReminderPickerFieldKey } from '../core/reminder-list-mutation';
 import { OperonSettings, InlineTaskCompactChipItem, InlineTaskCompactChipKey, INLINE_TASK_COMPACT_CHIP_ORDER, INLINE_TASK_COMPACT_FALLBACK_ICONS, KeyMapping } from '../types/settings';
 import { isInternalCanonicalKey, isReminderStorageKey } from '../types/keys';
+import { findStatusDef, parseStatusValue } from '../types/pipeline';
 import { IndexedTask } from '../types/fields';
 import { formatAssigneeDisplay } from './field-pickers/assignees-picker';
 import { formatContextDisplay } from './field-pickers/contexts-picker';
@@ -62,8 +63,8 @@ export interface CompactChipEntryBuildOptions {
 }
 
 export const COMPACT_VISIBLE_CHIP_KEYS = [
-	'priority',
 	'status',
+	'priority',
 	'dateScheduled',
 	'dateDue',
 	'dateCompleted',
@@ -128,10 +129,17 @@ export function getInlineTaskCompactVisibleChipKeys(
 	settings: OperonSettings,
 	chipItems?: InlineTaskCompactChipItem[],
 ): string[] {
-	return getCompactChipItems(settings, chipItems)
+	const keys = getCompactChipItems(settings, chipItems)
 		.filter(item => item.visible)
 		.map(item => item.key)
 		.filter(key => isRenderableCompactSurfaceKey(settings, key));
+	const statusIdx = keys.indexOf('status');
+	const priorityIdx = keys.indexOf('priority');
+	if (statusIdx > priorityIdx && priorityIdx !== -1) {
+		keys.splice(statusIdx, 1);
+		keys.splice(priorityIdx, 0, 'status');
+	}
+	return keys;
 }
 
 export function shouldResolveLocationCompactChips(
@@ -200,7 +208,12 @@ export function buildInlineTaskCompactChipEntries(
 			case 'status': {
 				const value = fieldValues['status']?.trim();
 				if (!value) break;
-				entries.push(createEntry(settings, key, value, item?.iconOnly === true, 'status'));
+				const statusDef = findStatusDef(settings.pipelines, value, options?.workflowStatusIdentityIndex);
+				const displayLabel = statusDef?.label ?? parseStatusValue(value)?.status ?? value;
+				const displayIcon = statusDef?.pipelineStatusIcon ?? 'circle';
+				const entry = createEntry(settings, key, displayLabel, false, 'status');
+				entry.icon = displayIcon;
+				entries.push(entry);
 				break;
 			}
 			case 'blocking':
@@ -660,10 +673,11 @@ export function createInlineTaskCompactChipElement(
 		entry.reminderState ? `is-${entry.reminderState}` : '',
 		entry.blockedByVisualState ? 'has-blocked-by-visual-state' : '',
 		iconOnly ? 'is-icon-only' : '',
-		entry.key === 'priority' ? 'operon-chip-priority' : 'operon-chip-date',
+		entry.key === 'priority' ? 'operon-chip-priority' : entry.key === 'status' ? 'operon-chip-status' : 'operon-chip-date',
 		entry.interactive ? 'operon-chip-clickable' : 'operon-chip-readonly',
 		extraClasses,
 	].filter(Boolean).join(' ');
+	chip.dataset.chipKey = entry.key;
 	const ariaLabel = entry.reminderItem && !entry.interactive
 		? [entry.label, entry.tooltipContent].filter(Boolean).join('. ')
 		: entry.ariaLabel;
