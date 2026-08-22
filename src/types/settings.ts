@@ -753,6 +753,10 @@ export const TASK_CREATOR_TOOLBAR_FIELD_ORDER = [
 	'priority',
 	'status',
 	'parentTask',
+	'bucket',
+	'subBucket',
+	'project',
+	'epic',
 	'dateStarted',
 	'dateScheduled',
 	'dateDue',
@@ -880,6 +884,10 @@ export const TASK_CREATOR_FALLBACK_FIELD_ICONS: Record<TaskCreatorToolbarFieldKe
 	priority: 'flag',
 	status: 'circle-dot',
 	parentTask: 'git-branch-plus',
+	bucket: 'folder',
+	subBucket: 'folder-input',
+	project: 'briefcase',
+	epic: 'layers',
 	dateStarted: 'play',
 	dateScheduled: 'calendar-clock',
 	dateDue: 'calendar',
@@ -1053,6 +1061,10 @@ function buildDefaultTaskCreatorToolbarItems(): TaskCreatorToolbarItem[] {
 		{ key: 'priority', visible: true },
 		{ key: 'status', visible: true },
 		{ key: 'parentTask', visible: true },
+		{ key: 'bucket', visible: false },
+		{ key: 'subBucket', visible: false },
+		{ key: 'project', visible: true },
+		{ key: 'epic', visible: true },
 		{ key: 'contexts', visible: true },
 		{ key: 'location', visible: true },
 		{ key: 'links', visible: false },
@@ -1598,6 +1610,13 @@ export interface OperonSettings {
 	/** Whether filter rows show the right-side plain checkbox progress action. */
 	filterTaskShowPlainCheckboxAction: boolean;
 
+	// Projects
+	projectsEnabled: boolean;
+	projectsBasePath: string;
+	projectTemplatePath: string;
+	projectTasksHeading: string;
+	autoSyncProjectTags: boolean;
+
 	// Workspace tweaks
 	/** If true, hide Obsidian workspace scrollbars while preserving scrolling. */
 	workspaceTweaksHideScrollbars: boolean;
@@ -1985,6 +2004,12 @@ export const DEFAULT_SETTINGS: OperonSettings = {
 	dynamicFileTaskFilterShowOnlyOpenSubtasks: false,
 	dynamicSubtasksFilterSubtaskAutoExpandLimit: 10,
 	dynamicSubtasksFilterShowOnlyOpenSubtasks: false,
+
+	projectsEnabled: false,
+	projectsBasePath: 'Projects/',
+	projectTemplatePath: '',
+	projectTasksHeading: 'Tasks',
+	autoSyncProjectTags: false,
 
 	language: 'en',
 	languagePackSubscriptions: [],

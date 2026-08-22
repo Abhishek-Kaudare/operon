@@ -47,6 +47,7 @@ import {
 	isFloatingPanelTargetForRoot,
 	requestFloatingPanelCloseForRoot,
 } from './field-pickers/common';
+import { showProjectHierarchyPicker } from './field-pickers/project-hierarchy-picker';
 import { showFilterConditionPicker } from './field-pickers/filter-condition-picker';
 import { showSearchableMultiOptionPicker, type SearchableMultiOption } from './field-pickers/list-picker';
 import { showSearchableFieldPicker, type SearchableFieldPickerOption } from './field-pickers/searchable-field-picker';
@@ -1621,6 +1622,59 @@ export class FilterSetModal extends Modal {
 				} else {
 					selectionButton.addEventListener('click', openScopePicker);
 				}
+				return;
+			}
+			
+			const isProjectHierarchyField = cond.field === 'bucket' || cond.field === 'subBucket' || cond.field === 'project' || cond.field === 'epic';
+			const usesProjectHierarchyPicker = isProjectHierarchyField && (cond.operator === 'equals' || cond.operator === 'notEquals' || cond.operator === 'contains' || cond.operator === 'doesNotContain');
+			if (usesProjectHierarchyPicker) {
+				const selectionButton = valueWrapper.createEl('button', {
+					cls: 'operon-filter-control operon-filter-project-hierarchy-picker',
+					type: 'button',
+				});
+				const renderSelectionLabel = () => {
+					selectionButton.setText(cond.value || 'Select ' + cond.field + '...');
+				};
+				renderSelectionLabel();
+
+				const extractContextValues = (): Record<string, string> => {
+					const ctx: Record<string, string> = {};
+					const traverse = (groups: FilterGroup[]) => {
+						for (const g of groups) {
+							for (const node of g.children) {
+								if ('logic' in node) {
+									traverse([node]);
+								} else {
+									if (node.operator === 'equals' && (node.field === 'bucket' || node.field === 'subBucket' || node.field === 'project' || node.field === 'epic')) {
+										ctx[node.field] = node.value ?? '';
+									}
+								}
+							}
+						}
+					};
+					traverse([this.filterSet.rootGroup]);
+					return ctx;
+				};
+
+				const openProjectHierarchyPicker = () => {
+					// Hacky way to access indexer
+					const hierarchy = (this.app as any).plugins.plugins.operon?.projectIndexer?.getHierarchy?.();
+					if (!hierarchy) return;
+					
+					showProjectHierarchyPicker(selectionButton, {
+						hierarchy,
+						canonicalKey: cond.field as 'bucket' | 'subBucket' | 'project' | 'epic',
+						value: cond.value,
+						contextValues: extractContextValues(),
+						onSelect: (value: string) => {
+							cond.value = value;
+							cond.values = undefined;
+							renderSelectionLabel();
+							this.syncMirroredFilterFields();
+						},
+					});
+				};
+				selectionButton.addEventListener('click', openProjectHierarchyPicker);
 				return;
 			}
 

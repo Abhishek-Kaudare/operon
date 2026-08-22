@@ -33,7 +33,13 @@ export function getTaskCreatorToolbarTooltipCopy(
 
 	const titleKey = `taskCreatorToolbarTooltip_${key}`;
 	const title = t('settings', titleKey);
-	if (title === titleKey) return null;
+	if (title === titleKey) {
+		if (key === 'bucket') return { title: 'Bucket', content: 'Select Bucket' };
+		if (key === 'subBucket') return { title: 'Sub-Bucket', content: 'Select Sub-Bucket' };
+		if (key === 'project') return { title: 'Project', content: 'Select Project' };
+		if (key === 'epic') return { title: 'Epic', content: 'Select Epic' };
+		return null;
+	}
 
 	const contentKey = `taskCreatorToolbarTooltipDesc_${key}`;
 	const content = t('settings', contentKey);

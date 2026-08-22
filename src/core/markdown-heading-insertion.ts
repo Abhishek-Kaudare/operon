@@ -28,13 +28,60 @@ export function insertInlineTaskUnderFirstHeadingKeyword(
 	const headingSearch = safeKeyword.toLowerCase();
 	const lines = splitPreservingEmptyTrailingLine(content);
 
+	// Extract parentTask ID if this task line is a subtask
+	const parentMatch = taskLine.match(/\{\{parentTask::\s*([^\}]+)\}\}/);
+	const parentId = parentMatch ? parentMatch[1].trim() : null;
+
+	if (parentId) {
+		let parentIndex = -1;
+		let parentIndent = '';
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i].includes(`{{operonId:: ${parentId}}}`) || lines[i].includes(`{{operonId::${parentId}}}`)) {
+				parentIndex = i;
+				const indentMatch = lines[i].match(/^(\s*)/);
+				parentIndent = indentMatch ? indentMatch[1] : '';
+				break;
+			}
+		}
+
+		if (parentIndex !== -1) {
+			const childIndent = parentIndent ? `${parentIndent}\t` : '\t';
+			const rawTaskText = taskLine.replace(/^\s*/, '');
+			const formattedTaskLine = rawTaskText.startsWith('\t') || rawTaskText.startsWith(' ')
+				? rawTaskText
+				: `${childIndent}${rawTaskText}`;
+
+			let insertIndex = parentIndex + 1;
+			while (insertIndex < lines.length) {
+				const line = lines[insertIndex];
+				if (MARKDOWN_HEADING_RE.test(line.trim())) break;
+				if (line.trim().length > 0 && !/^\s+/.test(line) && !line.startsWith('\t')) break;
+				insertIndex++;
+			}
+
+			lines.splice(insertIndex, 0, formattedTaskLine);
+			return {
+				content: lines.join('\n'),
+				insertedLineNumber: insertIndex,
+				headingLineNumber: parentIndex,
+				headingWasCreated: false,
+			};
+		}
+	}
+
 	for (let index = 0; index < lines.length; index++) {
 		const match = lines[index].trim().match(MARKDOWN_HEADING_RE);
 		if (!match) continue;
 		const headingText = match[2].trim().toLowerCase();
 		if (!headingText.includes(headingSearch)) continue;
 
-		const insertIndex = index + 1;
+		let insertIndex = index + 1;
+		while (insertIndex < lines.length) {
+			const line = lines[insertIndex].trim();
+			if (MARKDOWN_HEADING_RE.test(line)) break;
+			insertIndex++;
+		}
+
 		lines.splice(insertIndex, 0, taskLine);
 		return {
 			content: lines.join('\n'),

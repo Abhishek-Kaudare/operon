@@ -316,6 +316,11 @@ export const ALL_OPERON_SETTINGS_BACKUP_KEYS = [
 	'fallbackTaskIconSource',
 	'taskStatusIconColorSource',
 	'fallbackStateIcons',
+	'projectsEnabled',
+	'projectsBasePath',
+	'projectTemplatePath',
+	'projectTasksHeading',
+	'autoSyncProjectTags',
 ] as const satisfies readonly (keyof OperonSettings)[];
 
 type DeclaredOperonSettingsBackupKey = typeof ALL_OPERON_SETTINGS_BACKUP_KEYS[number];

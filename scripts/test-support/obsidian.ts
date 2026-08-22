@@ -557,3 +557,12 @@ export function prepareFuzzySearch(query: string): (value: string) => { score: n
 		};
 	};
 }
+
+export function parseFrontMatterEntry(frontmatter: any, key: string | RegExp): any {
+	if (!frontmatter) return null;
+	if (typeof key === 'string') return frontmatter[key];
+	for (const k of Object.keys(frontmatter)) {
+		if (key.test(k)) return frontmatter[k];
+	}
+	return null;
+}

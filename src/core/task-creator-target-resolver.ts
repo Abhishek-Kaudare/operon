@@ -92,19 +92,13 @@ export function resolveTaskCreatorInlinePlacement(args: {
 	getTaskById: TaskCreatorParentTaskLookup;
 }): TaskCreatorInlinePlacement {
 	const parentTask = resolveTaskCreatorDraftParentTask(args.draft, args.getTaskById);
-	if (
-		parentTask?.primary.format === 'inline'
-		&& args.settings.inlineTaskParentInlineTargetMode === 'below-parent'
-	) {
+	if (parentTask?.primary.format === 'inline') {
 		return {
 			kind: 'below-inline-parent',
 			parentTask,
 		};
 	}
-	if (
-		parentTask?.primary.format === 'yaml'
-		&& args.settings.inlineTaskParentFileTargetMode === 'inside-parent-file'
-	) {
+	if (parentTask?.primary.format === 'yaml') {
 		return {
 			kind: 'inside-file-parent',
 			parentTask,

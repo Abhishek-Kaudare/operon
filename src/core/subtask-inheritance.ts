@@ -96,8 +96,6 @@ function applyInheritedField(
 	if (key === 'priority') {
 		if (parentFields.priority?.trim()) {
 			inherited.priority = parentFields.priority.trim();
-		} else if (settings.defaultPriority?.trim()) {
-			inherited.priority = settings.defaultPriority.trim();
 		}
 		return;
 	}
@@ -109,6 +107,11 @@ function applyInheritedField(
 	if (key === 'taskColor') {
 		const normalizedTaskColor = normalizeTaskColorValue(parentFields.taskColor);
 		if (normalizedTaskColor) inherited.taskColor = normalizedTaskColor;
+		return;
+	}
+	if (key === 'project' || key === 'epic' || key === 'bucket' || key === 'subBucket') {
+		const val = parentFields[key]?.trim();
+		if (val) inherited[key] = val;
 		return;
 	}
 	const value = parentFields[key]?.trim();
@@ -131,6 +134,10 @@ export function resolveSubtaskInitialFieldsFromParentValues(
 	keys.add('priority');
 	keys.add('taskColor');
 	keys.add('taskIcon');
+	keys.add('bucket');
+	keys.add('subBucket');
+	keys.add('project');
+	keys.add('epic');
 
 	for (const key of keys) {
 		applyInheritedField(inherited, key, parentFields, parentTags, settings);

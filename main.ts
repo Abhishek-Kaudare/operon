@@ -7,6 +7,9 @@
  */
 
 import { Editor, EditorPosition, EditorSelection, MarkdownRenderChild, MarkdownSectionInformation, MarkdownView, MarkdownPostProcessorContext, Menu, MenuItem, Notice, Platform, Plugin, TFile, TAbstractFile, TFolder, WorkspaceLeaf, apiVersion, editorLivePreviewField, requestUrl, requireApiVersion, setIcon } from 'obsidian';
+import { ProjectIndexer } from './src/indexer/project-indexer';
+import { ProjectCreationModal } from './src/ui/project-creation-modal';
+import { createProjectVisualProcessor } from './src/ui/project-visual-processor';
 import { EditorView } from '@codemirror/view';
 import type { StateEffect } from '@codemirror/state';
 import {
@@ -1213,6 +1216,7 @@ export default class OperonPlugin extends Plugin {
 	private agentRuntimeCore!: OperonAgentRuntimeCoreV1;
 	storage!: OperonStorage;
 	indexer!: OperonIndexer;
+	projectIndexer!: ProjectIndexer;
 	writer!: TaskWriter;
 	dependencyManager!: DependencyManager;
 	private dirtyFilesForIndentation = new Set<string>();
@@ -13144,6 +13148,7 @@ export default class OperonPlugin extends Plugin {
 		await this.refreshTablePresetRegistry({ adoptUnbound: true, persistBindings: true });
 		await this.ensureCanonicalTablePresetBootstrap();
 		this.registerTablePresetFileWatchers();
+		this.registerProjectFileWatchers();
 		this.register(() => {
 			if (this.tablePresetRegistryRefreshTimer !== null) {
 				clearWindowTimeout(this.tablePresetRegistryRefreshTimer);
@@ -13185,6 +13190,24 @@ export default class OperonPlugin extends Plugin {
 			this.settings.tableDefaultPresetId = previousDefault;
 			throw error;
 		}
+	}
+
+	private registerProjectFileWatchers(): void {
+		const refresh = (file: TAbstractFile) => {
+			if (!this.settings.projectsEnabled) return;
+			if (file.path.startsWith(this.settings.projectsBasePath)) {
+				this.projectIndexer.buildIndex(this.app, this.settings.projectsBasePath);
+			}
+		};
+		this.registerEvent(this.app.vault.on('modify', file => refresh(file)));
+		this.registerEvent(this.app.vault.on('create', file => refresh(file)));
+		this.registerEvent(this.app.vault.on('delete', file => refresh(file)));
+		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+			if (!this.settings.projectsEnabled) return;
+			if (file.path.startsWith(this.settings.projectsBasePath) || oldPath.startsWith(this.settings.projectsBasePath)) {
+				this.projectIndexer.buildIndex(this.app, this.settings.projectsBasePath);
+			}
+		}));
 	}
 
 	private registerTablePresetFileWatchers(): void {
@@ -13787,6 +13810,14 @@ export default class OperonPlugin extends Plugin {
 		const indexV8Store = new IndexV8Store(this.app.vault.adapter, this.storage.indexV8Paths);
 		const indexV8PersistenceCoordinator = new IndexV8PersistenceCoordinator(indexV8Store);
 		this.indexer = new OperonIndexer(this.app, this.storage, indexV8PersistenceCoordinator, indexV8Store);
+		this.projectIndexer = new ProjectIndexer();
+		if (this.settings.projectsEnabled) {
+			this.projectIndexer.buildIndex(this.app, this.settings.projectsBasePath);
+		}
+		this.indexer.onResolveProjectContext = (filePath) => {
+			if (!this.settings.projectsEnabled) return undefined;
+			return this.projectIndexer.getContextForTask(filePath);
+		};
 		(window as any).operonGetTask = (id: string) => this.indexer.getTask(id);
 		await this.bindAgentRuntimeServices();
 		this.reminderDeliveryController = new ReminderDeliveryController({
@@ -14016,6 +14047,10 @@ export default class OperonPlugin extends Plugin {
 		// Register embedded filter code block processor
 		this.registerEmbedFilterProcessor();
 		this.registerEmbedTableProcessor();
+		this.registerMarkdownCodeBlockProcessor(
+			'operon-project',
+			createProjectVisualProcessor(this.app, this.indexer, this.projectIndexer),
+		);
 		this.registerEvent(this.app.workspace.on('css-change', refreshActiveEmbedPercentWidths));
 
 		// Register settings tab
@@ -14115,6 +14150,12 @@ export default class OperonPlugin extends Plugin {
 				this.addRibbonIcon('pin', t('commands', 'openPinnedTasks'), () => {
 					runAsyncAction('open pinned tasks from ribbon failed', () => this.openPinnedTasksSurface());
 				});
+
+				if (this.settings.projectsEnabled) {
+					this.addRibbonIcon('folder-tree', 'Create Project / Epic', () => {
+						new ProjectCreationModal(this.app, this.settings, this.projectIndexer).open();
+					});
+				}
 
 			this.scheduleYamlPropertyVisibilityRefresh(150);
 
@@ -24818,6 +24859,7 @@ export default class OperonPlugin extends Plugin {
 			settings: this.settings,
 			allTasks: this.indexer.getAllTasks(),
 			getAllTasks: () => this.indexer.getAllTasks(),
+			getProjectHierarchy: () => this.projectIndexer.getHierarchy(),
 			subscribeIndexUpdates: listener => this.indexer.subscribeIndexUpdates(listener),
 			initialDraft,
 			submitMode: options.submitMode,
@@ -25358,6 +25400,20 @@ export default class OperonPlugin extends Plugin {
 	}
 
 	private resolveTaskCreatorFileTargetFolderOverride(draft: TaskCreatorDraft): string | null {
+		if (this.settings.projectsEnabled) {
+			const hierarchy = this.projectIndexer.getHierarchy();
+			const epicName = draft.fieldValues['epic'];
+			const projectName = draft.fieldValues['project'];
+			
+			if (epicName) {
+				const epic = Array.from(hierarchy.epicsById.values()).find(e => e.name === epicName);
+				if (epic) return epic.path;
+			} else if (projectName) {
+				const project = Array.from(hierarchy.projectsById.values()).find(p => p.name === projectName);
+				if (project) return project.path;
+			}
+		}
+
 		return resolveTaskCreatorFileTargetFolderOverrideDecision({
 			draft,
 			settings: this.settings,
@@ -25805,10 +25861,61 @@ export default class OperonPlugin extends Plugin {
 		};
 	}
 
+	private async insertTaskCreatorInlineTaskIntoProjectEpic(
+		draft: TaskCreatorDraft,
+		targetPath: string,
+		headingKeyword: string,
+	): Promise<QuickInlineTaskCreationResult | null> {
+		const targetFile = this.app.vault.getAbstractFileByPath(targetPath);
+		if (!(targetFile instanceof TFile) || targetFile.extension !== 'md') return null;
+
+		const content = await this.app.vault.cachedRead(targetFile);
+		const insertionPreview = insertInlineTaskUnderFirstHeadingKeyword(content, headingKeyword, '- [ ]');
+		const createdLine = this.buildTaskCreatorInlineTaskLine(
+			draft,
+			targetPath,
+			insertionPreview.insertedLineNumber,
+			{},
+			localNow(),
+		);
+		if (!createdLine) return null;
+		if (!this.validateDependencyDraftOrShow(createdLine.operonId, createdLine.fieldValues)) return null;
+
+		const insertion = insertInlineTaskUnderFirstHeadingKeyword(content, headingKeyword, createdLine.taskLine);
+		this.suppressRawTaskCreationNotice(createdLine.operonId);
+		await this.app.vault.modify(targetFile, insertion.content);
+		return {
+			operonId: createdLine.operonId,
+			filePath: targetPath,
+			lineNumber: insertion.insertedLineNumber,
+		};
+	}
+
 	private async insertTaskCreatorInlineTaskWithResolvedTarget(
 		draft: TaskCreatorDraft,
 		options: TaskCreatorInlineCreationOptions = {},
 	): Promise<TaskCreatorInlineCreationAttempt> {
+		if (this.settings.projectsEnabled) {
+			const hierarchy = this.projectIndexer.getHierarchy();
+			const epicName = draft.fieldValues['epic'];
+			const projectName = draft.fieldValues['project'];
+			
+			let targetPath: string | null = null;
+			if (epicName) {
+				const epic = Array.from(hierarchy.epicsById.values()).find(e => e.name === epicName);
+				if (epic) targetPath = `${epic.path}/epic.md`;
+			} else if (projectName) {
+				const project = Array.from(hierarchy.projectsById.values()).find(p => p.name === projectName);
+				if (project) targetPath = `${project.path}/project.md`;
+			}
+
+			if (targetPath) {
+				const heading = this.settings.projectTasksHeading || 'Tasks';
+				const created = await this.insertTaskCreatorInlineTaskIntoProjectEpic(draft, targetPath, heading);
+				if (created) return { kind: 'created', result: created };
+			}
+		}
+
 		if (options.parentAwarePlacement !== false) {
 			const placement = resolveTaskCreatorInlinePlacement({
 				draft,
@@ -26081,7 +26188,21 @@ export default class OperonPlugin extends Plugin {
 		parsed: ParsedTask,
 		selectedTemplate: FileTaskTemplateOption,
 	): Promise<void> {
-		const folder = this.getTargetFileTaskFolder(file);
+		let folder = this.getTargetFileTaskFolder(file);
+		
+		if (this.settings.projectsEnabled) {
+			const hierarchy = this.projectIndexer.getHierarchy();
+			const epicField = parsed.fields.find(f => f.key === 'epic')?.value;
+			const projectField = parsed.fields.find(f => f.key === 'project')?.value;
+			
+			if (epicField) {
+				const epic = Array.from(hierarchy.epicsById.values()).find(e => e.name === epicField);
+				if (epic) folder = epic.path;
+			} else if (projectField) {
+				const project = Array.from(hierarchy.projectsById.values()).find(p => p.name === projectField);
+				if (project) folder = project.path;
+			}
+		}
 
 		const initialDescription = parsed.description || t('taskEditor', 'newOperonTaskFile');
 		await this.ensureFileTaskFolder(folder);
@@ -26362,22 +26483,43 @@ export default class OperonPlugin extends Plugin {
 				lineNumber: cursorTarget.lineNumber,
 			};
 		} else {
-			const target = await this.resolveTaskCreatorInlineTargetFile({
-				excludedFilePath: file.path,
-			});
-			if (target.kind === 'cancelled') return;
-			if (target.kind !== 'target') {
-				new Notice(t('notifications', 'fileTaskToInlineFailed'));
-				return;
+			let customTargetPath: string | null = null;
+			if (this.settings.projectsEnabled) {
+				const hierarchy = this.projectIndexer.getHierarchy();
+				const epicField = indexedYamlTask.fieldValues['epic'];
+				const projectField = indexedYamlTask.fieldValues['project'];
+				if (epicField) {
+					const epic = Array.from(hierarchy.epicsById.values()).find(e => e.name === epicField);
+					if (epic) customTargetPath = `${epic.path}/epic.md`;
+				} else if (projectField) {
+					const project = Array.from(hierarchy.projectsById.values()).find(p => p.name === projectField);
+					if (project) customTargetPath = `${project.path}/project.md`;
+				}
 			}
-			if (target.file.path === file.path) {
-				new Notice(t('notifications', 'sameFileInlineTarget'));
-				return;
+			
+			if (customTargetPath && customTargetPath !== file.path) {
+				targetSpec = {
+					mode: 'configured-target',
+					filePath: customTargetPath,
+				};
+			} else {
+				const target = await this.resolveTaskCreatorInlineTargetFile({
+					excludedFilePath: file.path,
+				});
+				if (target.kind === 'cancelled') return;
+				if (target.kind !== 'target') {
+					new Notice(t('notifications', 'fileTaskToInlineFailed'));
+					return;
+				}
+				if (target.file.path === file.path) {
+					new Notice(t('notifications', 'sameFileInlineTarget'));
+					return;
+				}
+				targetSpec = {
+					mode: 'configured-target',
+					filePath: target.file.path,
+				};
 			}
-			targetSpec = {
-				mode: 'configured-target',
-				filePath: target.file.path,
-			};
 		}
 		const runtimeConversion = await this.applyUiCanonicalConversion(
 			indexedYamlTask,
@@ -29279,6 +29421,14 @@ export default class OperonPlugin extends Plugin {
 				name: t('commands', 'openOperonTable'),
 				callback: () => {
 					runAsyncAction('open operon table command failed', () => this.openOperonTable());
+				},
+			});
+
+			this.addCommand({
+				id: 'create-project-hierarchy-item',
+				name: 'Create Bucket, Project, or Epic',
+				callback: () => {
+					new ProjectCreationModal(this.app, this.settings, this.projectIndexer).open();
 				},
 			});
 

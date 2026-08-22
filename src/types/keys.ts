@@ -61,6 +61,11 @@ export const CANONICAL_KEYS: CanonicalKeyDef[] = [
 	{ name: 'datetimeRepeatEnd', type: 'datetime', sync: 'yes', group: 'core', position: 19, description: 'Recurrence end date/time' },
 	// Workflow
 	{ name: 'parentTask', type: 'text', sync: 'yes', group: 'workflow', position: 20, description: 'Parent project/task ID (operonId reference)' },
+	// Workflow — Projects
+	{ name: 'bucket', type: 'text', sync: 'yes', group: 'workflow', position: 20.1, description: 'Bucket' },
+	{ name: 'subBucket', type: 'text', sync: 'yes', group: 'workflow', position: 20.2, description: 'Sub Bucket' },
+	{ name: 'project', type: 'text', sync: 'yes', group: 'workflow', position: 20.3, description: 'Project name' },
+	{ name: 'epic', type: 'text', sync: 'yes', group: 'workflow', position: 20.4, description: 'Epic name' },
 	// Dependencies
 	{ name: 'blocking', type: 'list', sync: 'auto', group: 'dependencies', position: 21, description: 'Task IDs this task is blocking' },
 	{ name: 'blockedBy', type: 'list', sync: 'auto', group: 'dependencies', position: 22, description: 'Task IDs blocking this task' },
@@ -110,6 +115,7 @@ export const CANONICAL_KEY_MAP = new Map(CANONICAL_KEYS.map(k => [k.name, k]));
 /** Legacy source keys that still read as their modern canonical key. */
 export const LEGACY_CANONICAL_KEY_ALIASES: Record<string, readonly string[]> = {
 	datetimeCreated: ['dateCreated'],
+	subBucket: ['sub-bucket'],
 };
 
 /** Keys sorted by canonical position for serialization */

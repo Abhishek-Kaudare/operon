@@ -45,6 +45,7 @@ import {
 	resolveBlockedByAggregateVisualState,
 	resolveBlockedByVisualStateColor,
 } from '../core/blocked-by-visual-state';
+import type { ProjectHierarchy } from '../types/project-hierarchy';
 
 const TASK_CREATOR_NON_FIELD_SUBMIT_KEYS = new Set(['note', 'pinned', 'subtasks', 'tags']);
 const TASK_CREATOR_DAY_PICKER_DATE_KEYS = new Set<string>([
@@ -87,6 +88,7 @@ export interface TaskCreatorModalOptions {
 	settings: OperonSettings;
 	allTasks: IndexedTask[];
 	getAllTasks?: () => IndexedTask[];
+	getProjectHierarchy?: () => ProjectHierarchy;
 	subscribeIndexUpdates?: (listener: () => void) => () => void;
 	initialDraft?: TaskCreatorDraft | null;
 	submitMode?: TaskCreatorSubmitMode;
@@ -349,18 +351,21 @@ export function reconcileTaskCreatorParentInheritanceForDraft(
 		...getSubtaskInheritedFieldKeys(inherited),
 	]);
 	for (const key of candidateKeys) {
-		if (explicit.has(key)) continue;
-		const rawInheritedValue = inherited[key];
+		if (explicit.has(key) && ((key !== 'project' && key !== 'epic') || !parentTaskId)) continue;
+		const rawInheritedValue = inherited[key] ?? (parentFieldValues ? parentFieldValues[key] : undefined);
 		const inheritedValue = typeof rawInheritedValue === 'string' ? rawInheritedValue.trim() : '';
 		if (inheritedValue) {
 			nextFieldValues[key] = inheritedValue;
 			nextInherited.add(key);
+			explicit.delete(key);
 			continue;
 		}
 		if (inheritedApplied.has(key)) {
 			delete nextFieldValues[key];
 		}
 	}
+
+	draft.explicitFieldKeys = Array.from(explicit);
 
 	draft.fieldValues = nextFieldValues;
 	draft.inheritedFieldKeys = Array.from(nextInherited);
@@ -485,6 +490,7 @@ export class TaskCreatorModal extends Modal {
 	private nativeCloseButtonCleanup: (() => void) | null = null;
 	private suggestionState: SuggestionState | null = null;
 	private activePickerClose: (() => void) | null = null;
+	private propertiesSummaryEl: HTMLElement | null = null;
 	private escapeScopeHandler: KeymapEventHandler | null = null;
 	private seededParentFieldValuesById = new Map<string, Record<string, string> | null>();
 	private seededParentTagsById = new Map<string, string[] | null>();
@@ -521,6 +527,16 @@ export class TaskCreatorModal extends Modal {
 		super(app);
 		this.options = options;
 		this.draft = cloneTaskCreatorDraft(options.initialDraft);
+		if (!this.draft.fieldValues['priority'] && options.settings.defaultPriority) {
+			this.draft.fieldValues['priority'] = options.settings.defaultPriority;
+		}
+		if (!this.draft.fieldValues['status']) {
+			const firstPipeline = options.settings.pipelines?.[0];
+			const firstStatus = firstPipeline?.statuses?.[0]?.label;
+			if (firstPipeline && firstStatus) {
+				this.draft.fieldValues['status'] = `${firstPipeline.name}.${firstStatus}`;
+			}
+		}
 		this.submitMode = normalizeTaskCreatorSubmitMode(options.submitMode);
 		this.activeCreateType = getInitialTaskCreatorCreateType(
 			this.submitMode,
@@ -648,6 +664,7 @@ export class TaskCreatorModal extends Modal {
 		}
 
 		this.reminderStripEl = body.createDiv('operon-task-creator-reminder-strip');
+		this.propertiesSummaryEl = body.createDiv('operon-task-creator-properties-summary');
 		this.metadataRowEl = body.createDiv('operon-task-creator-toolbar');
 		this.toolsEl = this.metadataRowEl.createDiv('operon-task-creator-tools');
 		this.toolsEl.addEventListener('scroll', this.toolbarScrollHandler, { passive: true });
@@ -1239,6 +1256,7 @@ export class TaskCreatorModal extends Modal {
 			app: this.app,
 			settings: this.options.settings,
 			allTasks: this.options.allTasks,
+			projectHierarchy: this.options.getProjectHierarchy?.(),
 			canonicalKey,
 			anchor,
 			currentFieldValues: { ...this.draft.fieldValues },
@@ -1364,6 +1382,11 @@ export class TaskCreatorModal extends Modal {
 	}
 
 	private handleFieldButtonClick(key: TaskCreatorFieldKey): void {
+		const isProjectOrEpicKey = key === 'project' || key === 'epic' || key === 'bucket' || key === 'subBucket';
+		const hasParentTask = !!(this.draft.fieldValues['parentTask'] ?? '').trim();
+		if (isProjectOrEpicKey && (hasParentTask || this.draft.inheritedFieldKeys.includes(key))) {
+			return;
+		}
 		if (key === 'note') {
 			this.toggleNote();
 			return;
@@ -1554,16 +1577,26 @@ export class TaskCreatorModal extends Modal {
 
 	private renderFieldButtons(): void {
 		this.renderReminderDraftStrip();
+		const hasParentTask = !!(this.draft.fieldValues['parentTask'] ?? '').trim();
 		for (const key of this.getVisibleToolbarFieldOrder()) {
 			const button = this.fieldButtonMap.get(key);
 			if (!button) continue;
 			button.empty();
 			this.syncFieldButtonActiveState(key);
-			const ruleAddDisabled = key === 'reminderRules'
+
+			const isProjectOrEpicKey = key === 'project' || key === 'epic' || key === 'bucket' || key === 'subBucket';
+			const isProjectOrEpicDisabled = isProjectOrEpicKey && (hasParentTask || this.draft.inheritedFieldKeys.includes(key));
+			const ruleAddDisabled = (key === 'reminderRules'
 				&& !getCustomFieldMapping(this.options.settings.keyMappings, key)
-				&& getAvailableReminderRuleAnchors(this.draft.fieldValues).length === 0;
+				&& getAvailableReminderRuleAnchors(this.draft.fieldValues).length === 0) || isProjectOrEpicDisabled;
+
 			button.disabled = ruleAddDisabled;
 			button.setAttribute('aria-disabled', String(ruleAddDisabled));
+			if (isProjectOrEpicDisabled) {
+				button.addClass('is-disabled');
+			} else {
+				button.removeClass('is-disabled');
+			}
 
 			const iconWrap = button.createSpan('operon-task-creator-tool-icon');
 			if (key === 'taskIcon' && this.draft.taskIcon.trim()) {
@@ -1578,6 +1611,124 @@ export class TaskCreatorModal extends Modal {
 			}
 			if (key === 'blockedBy') this.applyBlockedByAggregateState(button);
 			this.bindFieldButtonTooltip(button, key);
+		}
+		this.renderSelectedPropertiesBar();
+	}
+
+	private renderSelectedPropertiesBar(): void {
+		if (!this.propertiesSummaryEl) return;
+		this.propertiesSummaryEl.empty();
+
+		const chips: Array<{ key: string; label: string; value: string; isInherited?: boolean }> = [];
+
+		const priority = (this.draft.fieldValues['priority'] ?? '').trim();
+		if (priority) {
+			chips.push({ key: 'priority', label: 'Priority', value: priority });
+		}
+
+		const status = (this.draft.fieldValues['status'] ?? '').trim();
+		if (status) {
+			const cleanStatus = status.split('.').pop() || status;
+			chips.push({ key: 'status', label: 'Status', value: cleanStatus });
+		}
+
+		const bucket = (this.draft.fieldValues['bucket'] ?? '').trim();
+		if (bucket) {
+			chips.push({
+				key: 'bucket',
+				label: 'Bucket',
+				value: bucket,
+				isInherited: !!(this.draft.fieldValues['parentTask'] ?? '').trim() || this.draft.inheritedFieldKeys.includes('bucket'),
+			});
+		}
+
+		const project = (this.draft.fieldValues['project'] ?? '').trim();
+		if (project) {
+			chips.push({
+				key: 'project',
+				label: 'Project',
+				value: project,
+				isInherited: !!(this.draft.fieldValues['parentTask'] ?? '').trim() || this.draft.inheritedFieldKeys.includes('project'),
+			});
+		}
+
+		const epic = (this.draft.fieldValues['epic'] ?? '').trim();
+		if (epic) {
+			chips.push({
+				key: 'epic',
+				label: 'Epic',
+				value: epic,
+				isInherited: !!(this.draft.fieldValues['parentTask'] ?? '').trim() || this.draft.inheritedFieldKeys.includes('epic'),
+			});
+		}
+
+		const parentTask = (this.draft.fieldValues['parentTask'] ?? '').trim();
+		if (parentTask) {
+			const parentObj = this.options.allTasks?.find(t => t.operonId === parentTask);
+			const parentLabel = parentObj ? parentObj.description : parentTask;
+			chips.push({ key: 'parentTask', label: 'Parent', value: parentLabel });
+		}
+
+		const due = (this.draft.fieldValues['dateDue'] ?? '').trim();
+		if (due) chips.push({ key: 'dateDue', label: 'Due', value: due });
+
+		const scheduled = (this.draft.fieldValues['dateScheduled'] ?? '').trim();
+		if (scheduled) chips.push({ key: 'dateScheduled', label: 'Scheduled', value: scheduled });
+
+		const started = (this.draft.fieldValues['dateStarted'] ?? '').trim();
+		if (started) chips.push({ key: 'dateStarted', label: 'Started', value: started });
+
+		const estimate = (this.draft.fieldValues['estimate'] ?? '').trim();
+		if (estimate) chips.push({ key: 'estimate', label: 'Estimate', value: estimate });
+
+		const repeat = (this.draft.fieldValues['repeat'] ?? '').trim();
+		if (repeat) chips.push({ key: 'repeat', label: 'Repeat', value: repeat });
+
+		const assignees = (this.draft.fieldValues['assignees'] ?? '').trim();
+		if (assignees) chips.push({ key: 'assignees', label: 'Assignee', value: assignees });
+
+		if (this.draft.tags.length > 0) {
+			chips.push({ key: 'tags', label: 'Tags', value: this.draft.tags.map(t => `#${t}`).join(', ') });
+		}
+
+		const contexts = (this.draft.fieldValues['contexts'] ?? '').trim();
+		if (contexts) chips.push({ key: 'contexts', label: 'Contexts', value: contexts });
+
+		const location = (this.draft.fieldValues['location'] ?? '').trim();
+		if (location) chips.push({ key: 'location', label: 'Location', value: location });
+
+		if (chips.length === 0) {
+			this.propertiesSummaryEl.hide();
+			return;
+		}
+
+		this.propertiesSummaryEl.show();
+		const wrapper = this.propertiesSummaryEl.createDiv('operon-task-properties-wrapper');
+		wrapper.createSpan({ cls: 'operon-task-properties-title', text: 'Properties:' });
+
+		for (const chip of chips) {
+			const chipEl = wrapper.createDiv({
+				cls: `operon-task-property-chip ${chip.isInherited ? 'is-inherited' : ''}`,
+			});
+			chipEl.createSpan({ cls: 'property-chip-label', text: `${chip.label}:` });
+			chipEl.createSpan({ cls: 'property-chip-value', text: chip.value });
+
+			if (!chip.isInherited) {
+				const removeBtn = chipEl.createEl('button', {
+					cls: 'property-chip-remove',
+					text: '×',
+					attr: { type: 'button' },
+				});
+				removeBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					if (chip.key === 'tags') {
+						this.draft.tags = [];
+						this.applyPayloadToDraft({});
+					} else {
+						this.applyPayloadToDraft({ [chip.key]: '' });
+					}
+				});
+			}
 		}
 	}
 
@@ -1734,6 +1885,10 @@ export class TaskCreatorModal extends Modal {
 		if (key === 'blocking') return t('taskEditor', 'blocking');
 		if (key === 'blockedBy') return t('taskEditor', 'blockedBy');
 		if (key === 'pinned') return t('settings', 'taskCreatorToolbarPinned');
+		if (key === 'bucket') return 'Bucket';
+		if (key === 'subBucket') return 'Sub-Bucket';
+		if (key === 'project') return 'Project';
+		if (key === 'epic') return 'Epic';
 		const customMapping = getCustomFieldMapping(this.options.settings.keyMappings, key);
 		if (customMapping) return getCustomFieldLabel(customMapping);
 		const mapping = this.options.settings.keyMappings.find(candidate => candidate.canonicalKey === key);

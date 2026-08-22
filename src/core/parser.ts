@@ -411,6 +411,28 @@ export function parseTaskLine(
 	const tagTokens = extractTags(textParts);
 	const tags = tagTokens.map(token => token.tag);
 
+	// Extract project hierarchy fields from tags
+	const extractVirtualTagField = (key: string, prefix: string) => {
+		const found = tags.find(t => t.startsWith(prefix));
+		if (found && !fields.some(f => f.key === key)) {
+			const value = found.substring(prefix.length).replace(/-/g, ' ');
+			fields.push({
+				sourceKey: key,
+				key,
+				value,
+				rawValue: value,
+				type: 'text',
+				isCanonical: true,
+				containerRange: { from: -1, to: -1 },
+				valueRange: { from: -1, to: -1 },
+			});
+		}
+	};
+	extractVirtualTagField('bucket', 'bucket/');
+	extractVirtualTagField('subBucket', 'sub-bucket/');
+	extractVirtualTagField('project', 'project/');
+	extractVirtualTagField('epic', 'epic/');
+
 	// Description is text content with only the exact parsed tag ranges removed.
 	const description = buildDescription(textParts, tagTokens);
 

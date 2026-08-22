@@ -372,6 +372,7 @@ export class OperonIndexer {
 	onIndexV8Persisted: (() => void) | null = null;
 	onTasksRemoved: ((removedTasks: IndexedTask[]) => void) | null = null;
 	onTasksChanged: ((changes: IndexedTaskDelta[]) => void) | null = null;
+	onResolveProjectContext?: (filePath: string) => Record<string, string> | undefined;
 	private readonly reconciliationListeners = new Set<(event: IndexReconciliationEvent) => void>();
 
 	/** ISO timestamp of when the index was last persisted (from loaded cache) */
@@ -1444,7 +1445,9 @@ export class OperonIndexer {
 			scannedIds.add(parsed.operonId);
 
 			const location = inlineLocation(parsed.filePath, parsed.lineNumber);
-			const fieldValues: Record<string, string> = {};
+			const fieldValues: Record<string, string> = {
+				...(this.onResolveProjectContext?.(parsed.filePath) ?? {})
+			};
 			const inlineTags = new Set(parsed.tags.map(tag => tag.trim()).filter(Boolean));
 			for (const f of parsed.fields) {
 				const canonicalKey = f.key;
@@ -1484,7 +1487,10 @@ export class OperonIndexer {
 		if (result.yamlTask) {
 			scannedIds.add(result.yamlTask.operonId);
 			const location = yamlLocation(result.yamlTask.filePath);
-			const fv = { ...result.yamlTask.fieldValues };
+			const fv = {
+				...(this.onResolveProjectContext?.(result.yamlTask.filePath) ?? {}),
+				...result.yamlTask.fieldValues
+			};
 			const effectiveTimestamps = resolveYamlTaskEffectiveTimestamps({
 				storedCreated: fv['datetimeCreated'] ?? '',
 				storedModified: fv['datetimeModified'] ?? '',

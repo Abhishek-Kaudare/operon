@@ -323,6 +323,7 @@ type OperonSettingsSecondaryTabId =
 	| 'coreCustomKeys'
 	| 'tasksInlineTasks'
 	| 'tasksFileTasks'
+	| 'tasksProjects'
 	| 'tasksRelationships'
 	| 'tasksRecurrence'
 	| 'tasksReminders'
@@ -734,6 +735,7 @@ const SETTINGS_SEARCH_IMPERATIVE_PAGE_TAB_IDS = new Set<OperonSettingsTabId>([
 	'coreKeymapping',
 	'coreCustomKeys',
 	'tasksFileTasks',
+	'tasksProjects',
 	'tasksInlineTasks',
 	'viewsCalendar',
 	'viewsKanban',
@@ -772,6 +774,7 @@ const SETTINGS_SEARCH_TAB_DESCRIPTION_KEYS: Partial<Record<OperonSettingsSeconda
 	coreCustomKeys: { namespace: 'settings', key: 'customKeysDesc' },
 	tasksInlineTasks: { namespace: 'settings', key: 'settingsPageInlineTasksDesc' },
 	tasksFileTasks: { namespace: 'settings', key: 'settingsPageFileTasksDesc' },
+	tasksProjects: { namespace: 'settings', key: 'settingsPageFileTasksDesc' },
 	tasksRelationships: { namespace: 'settings', key: 'settingsPageRelationshipsDesc' },
 	tasksRecurrence: { namespace: 'settings', key: 'settingsPageRecurrenceDesc' },
 	tasksReminders: { namespace: 'settings', key: 'settingsPageRemindersDesc' },
@@ -3092,6 +3095,7 @@ export class OperonSettingsTab extends PluginSettingTab {
 			{ id: 'coreBackupRestore', groupId: 'core', label: settingsBackupT('settingsBackupPageTitle') },
 			{ id: 'tasksInlineTasks', groupId: 'tasks', label: t('settings', 'subtabInlineTasks') },
 			{ id: 'tasksFileTasks', groupId: 'tasks', label: t('settings', 'subtabFileTasks') },
+			{ id: 'tasksProjects', groupId: 'tasks', label: 'Projects & Epics' },
 			{ id: 'tasksRelationships', groupId: 'tasks', label: t('settings', 'subtabRelationships') },
 			{ id: 'tasksRecurrence', groupId: 'tasks', label: t('settings', 'subtabRecurrence') },
 			{ id: 'tasksReminders', groupId: 'tasks', label: t('settings', 'subtabReminders') },
@@ -3134,6 +3138,8 @@ export class OperonSettingsTab extends PluginSettingTab {
 			this.renderTasksInlineTasksTab(contentEl);
 		} else if (tabId === 'tasksFileTasks') {
 			this.renderTasksFileTasksTab(contentEl);
+		} else if (tabId === 'tasksProjects') {
+			this.renderTasksProjectsTab(contentEl);
 		} else if (tabId === 'tasksRelationships') {
 			this.renderTasksRelationshipsTab(contentEl);
 		} else if (tabId === 'tasksRecurrence') {
@@ -5139,6 +5145,86 @@ export class OperonSettingsTab extends PluginSettingTab {
 			this.buildNativeSettingsDocsAction(templateTitle, 'DOCS-024 Task templates'),
 		);
 		this.renderFileTaskTemplateSettings(templateSection, containerEl);
+	}
+
+	private renderTasksProjectsTab(containerEl: HTMLElement): void {
+		const section = renderNativeSettingsGroupedSection(containerEl, 'Projects & Epics');
+		const getProjectIndexer = () => (this.app as any).plugins?.plugins?.operon?.projectIndexer;
+
+		this.renderBoundToggleSetting(
+			section,
+			'Enable Projects & Epics',
+			'Enable hierarchy discovery for Buckets, Projects, and Epics in your vault.',
+			'projectsEnabled',
+			{
+				onAfterChange: async () => {
+					const indexer = getProjectIndexer();
+					if (indexer) {
+						await indexer.buildIndex(this.app, this.settings.projectsBasePath);
+					}
+				},
+			}
+		);
+
+		this.renderBoundTextSetting(
+			section,
+			'Projects Base Path',
+			'Root folder in your vault where project buckets are located.',
+			'projectsBasePath',
+			{
+				placeholder: 'Projects/',
+				settingClass: 'operon-settings-long-text-setting',
+				controlClass: 'operon-settings-input-long',
+				normalize: normalizeSettingsFolderPath,
+				onAfterChange: async () => {
+					const indexer = getProjectIndexer();
+					if (indexer) {
+						await indexer.buildIndex(this.app, this.settings.projectsBasePath);
+					}
+				},
+				configure: text => {
+					new FolderSuggest(this.app, text.inputEl, settingsAsyncHandler('settings projects base folder selection failed', async (folder) => {
+						this.settings.projectsBasePath = normalizeSettingsFolderPath(folder.path);
+						await this.saveSettings();
+						const indexer = getProjectIndexer();
+						if (indexer) {
+							await indexer.buildIndex(this.app, this.settings.projectsBasePath);
+						}
+					}));
+				},
+			}
+		);
+
+		this.renderBoundTextSetting(
+			section,
+			'Project Template Path',
+			'Optional template markdown file used when generating new projects.',
+			'projectTemplatePath',
+			{
+				placeholder: 'Templates/project.md',
+				settingClass: 'operon-settings-long-text-setting',
+				controlClass: 'operon-settings-input-long',
+			}
+		);
+
+		this.renderBoundTextSetting(
+			section,
+			'Project Tasks Heading',
+			'Heading inside project/epic markdown files under which inline tasks are appended.',
+			'projectTasksHeading',
+			{
+				placeholder: '## Tasks',
+				settingClass: 'operon-settings-long-text-setting',
+				controlClass: 'operon-settings-input-long',
+			}
+		);
+
+		this.renderBoundToggleSetting(
+			section,
+			'Auto-sync Project Tags',
+			'Automatically maintain #project/... and #epic/... tags when saving tasks.',
+			'autoSyncProjectTags'
+		);
 	}
 
 	private renderTasksInlineTasksTab(containerEl: HTMLElement): void {

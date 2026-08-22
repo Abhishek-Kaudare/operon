@@ -35,6 +35,8 @@ import {
 	normalizeCustomFieldRawValue,
 } from './custom-field-surfaces';
 import type { InlineRepeatCompletionMode } from '../storage/repeat-series-store';
+import type { ProjectHierarchy } from '../types/project-hierarchy';
+import { showProjectHierarchyPicker } from './field-pickers/project-hierarchy-picker';
 
 export interface TaskFieldPickerDispatchOptions {
 	app: App;
@@ -53,6 +55,7 @@ export interface TaskFieldPickerDispatchOptions {
 		| 'locationPickerMapDefaultZoom'
 	>;
 	allTasks: IndexedTask[];
+	projectHierarchy?: ProjectHierarchy;
 	canonicalKey: string;
 	anchor: HTMLElement | DOMRect;
 	currentFieldValues: Record<string, string>;
@@ -266,6 +269,23 @@ export function openTaskFieldPicker(options: TaskFieldPickerDispatchOptions): ((
 				onClear: () => options.onCommit({ location: '' }),
 				onClose: options.onClose,
 			});
+		case 'bucket':
+		case 'subBucket':
+		case 'project':
+		case 'epic':
+			if (options.projectHierarchy) {
+				return showProjectHierarchyPicker(options.anchor, {
+					hierarchy: options.projectHierarchy,
+					canonicalKey: canonicalKey,
+					value: currentFieldValues[canonicalKey],
+					contextValues: currentFieldValues,
+					retainInputFocus: options.retainInputFocus,
+					onSelect: value => options.onCommit({ [canonicalKey]: value }),
+					onClear: () => options.onCommit({ [canonicalKey]: '' }),
+					onClose: options.onClose,
+				});
+			}
+			return null;
 		case 'tags':
 			return showTagPicker(options.anchor, {
 				app: options.app,
